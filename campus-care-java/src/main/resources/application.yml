@@ -1,0 +1,77 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: campus-care-java
+
+  # ---------- MySQL ----------
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/campus_care?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USER:root}
+    # 本项目本地默认口令；改成你自己的 MySQL 口令，或用环境变量 MYSQL_PASSWORD 覆盖
+    password: ${MYSQL_PASSWORD:123456}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+
+  # ---------- Redis ----------
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: 0
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+    default-property-inclusion: non_null
+
+# ---------- MyBatis-Plus ----------
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    # 开发期打印 SQL，上线可去掉
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+      table-underline: true
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.campuscare.entity
+
+# ---------- JWT ----------
+jwt:
+  # 生产环境请用环境变量覆盖
+  secret: ${JWT_SECRET:campuscare-jwt-secret-key-2026-please-change-me-in-production}
+  expire-seconds: 86400
+  header: Authorization
+  prefix: "Bearer "
+
+# ---------- Python AI 服务 ----------
+python:
+  ai:
+    base-url: ${PYTHON_AI_URL:http://localhost:8000}
+    timeout-seconds: 120
+
+# ---------- Swagger ----------
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
+
+logging:
+  level:
+    root: info
+    com.campuscare: debug

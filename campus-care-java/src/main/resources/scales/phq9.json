@@ -1,0 +1,39 @@
+{
+  "code": "PHQ9",
+  "name": "PHQ-9 抑郁自评量表",
+  "intro": "在过去两周里，以下问题困扰您的频率如何？请根据真实感受作答，没有对错之分。",
+  "note": "本量表用于心理健康状态的初步筛查，不构成医学诊断。",
+  "maxScore": 27,
+  "options": [
+    { "value": 0, "label": "完全不会" },
+    { "value": 1, "label": "好几天" },
+    { "value": 2, "label": "一半以上的天数" },
+    { "value": 3, "label": "几乎每天" }
+  ],
+  "questions": [
+    { "no": 1, "text": "做事时提不起劲或没有兴趣", "critical": false },
+    { "no": 2, "text": "感到心情低落、沮丧或绝望", "critical": false },
+    { "no": 3, "text": "入睡困难、睡不安稳，或者睡眠过多", "critical": false },
+    { "no": 4, "text": "感觉疲倦或没有活力", "critical": false },
+    { "no": 5, "text": "食欲不振，或者吃得太多", "critical": false },
+    { "no": 6, "text": "觉得自己很糟，或觉得自己很失败，或让自己、家人失望", "critical": false },
+    { "no": 7, "text": "对事情专注有困难，例如阅读或看电视时难以集中", "critical": false },
+    { "no": 8, "text": "动作或说话速度明显变慢，别人已经察觉；或者相反，烦躁、坐立不安、动来动去的情况比平时更严重", "critical": false },
+    { "no": 9, "text": "有不如死掉、或用某种方式伤害自己的念头", "critical": true }
+  ],
+  "levels": [
+    { "max": 4, "severity": "NONE", "label": "无抑郁症状", "riskLevel": "LOW" },
+    { "max": 9, "severity": "MILD", "label": "轻度抑郁", "riskLevel": "LOW" },
+    { "max": 14, "severity": "MODERATE", "label": "中度抑郁", "riskLevel": "MEDIUM" },
+    { "max": 19, "severity": "MODERATELY_SEVERE", "label": "中重度抑郁", "riskLevel": "HIGH" },
+    { "max": 27, "severity": "SEVERE", "label": "重度抑郁", "riskLevel": "HIGH" }
+  ],
+  "criticalItems": [
+    {
+      "no": 9,
+      "minScore": 1,
+      "riskLevel": "HIGH",
+      "note": "第 9 题涉及自伤念头，按临床惯例只要不为 0 就单独判定高危，不参与总分分级的讨论"
+    }
+  ]
+}

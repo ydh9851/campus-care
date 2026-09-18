@@ -1,0 +1,29 @@
+{
+  "code": "GAD7",
+  "name": "GAD-7 广泛性焦虑自评量表",
+  "intro": "在过去两周里，您有多少时候受到以下问题的困扰？请根据真实感受作答，没有对错之分。",
+  "note": "本量表用于心理健康状态的初步筛查，不构成医学诊断。",
+  "maxScore": 21,
+  "options": [
+    { "value": 0, "label": "完全不会" },
+    { "value": 1, "label": "好几天" },
+    { "value": 2, "label": "一半以上的天数" },
+    { "value": 3, "label": "几乎每天" }
+  ],
+  "questions": [
+    { "no": 1, "text": "感到紧张、焦虑或急切", "critical": false },
+    { "no": 2, "text": "不能够停止或控制担忧", "critical": false },
+    { "no": 3, "text": "对各种各样的事情担忧过多", "critical": false },
+    { "no": 4, "text": "很难放松下来", "critical": false },
+    { "no": 5, "text": "由于不安而无法静坐", "critical": false },
+    { "no": 6, "text": "变得容易烦恼或急躁", "critical": false },
+    { "no": 7, "text": "感到似乎将有可怕的事情发生而害怕", "critical": false }
+  ],
+  "levels": [
+    { "max": 4, "severity": "NONE", "label": "无焦虑症状", "riskLevel": "LOW" },
+    { "max": 9, "severity": "MILD", "label": "轻度焦虑", "riskLevel": "LOW" },
+    { "max": 14, "severity": "MODERATE", "label": "中度焦虑", "riskLevel": "MEDIUM" },
+    { "max": 21, "severity": "SEVERE", "label": "重度焦虑", "riskLevel": "HIGH" }
+  ],
+  "criticalItems": []
+}

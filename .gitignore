@@ -1,0 +1,53 @@
+# ---- 环境变量 / 密钥（绝对不能提交）----
+.env
+*.env
+!.env.example
+
+# ---- Java ----
+target/
+*.class
+*.jar
+*.war
+!.mvn/wrapper/maven-wrapper.jar
+.idea/
+*.iml
+*.iws
+*.ipr
+.mvn/timing.properties
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# ---- AI 服务本地数据 ----
+campus-care-python/chroma_data/
+campus-care-python/*.db
+campus-care-python/*.sqlite3
+
+# ---- 前端 ----
+node_modules/
+dist/
+.vite/
+*.local
+
+# ---- 系统 / 编辑器 ----
+.DS_Store
+Thumbs.db
+.vscode/
+*.log
+logs/
+
+# ---- 本机专用（内含本地绝对路径/口令，不提交到仓库）----
+环境清单.md
+AI_CONTEXT.md
+start_redis.bat
+start_python.bat
+start_java.bat
+install_deps.bat

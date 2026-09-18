@@ -1,0 +1,75 @@
+version: "3.8"
+
+# CampusCare 一键启动：MySQL + Redis + Python AI 服务 + Java 主服务
+# 用法：把 .env.example 复制成 .env 并填好 DEEPSEEK_API_KEY，然后 docker-compose up -d
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: campuscare-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: campus_care
+      TZ: Asia/Shanghai
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_general_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD:-root}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: campuscare-redis
+    restart: always
+    ports:
+      - "6380:6379"
+
+  python-ai:
+    build: ./campus-care-python
+    container_name: campuscare-python
+    restart: always
+    environment:
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+      CHROMA_PERSIST_DIR: /app/chroma_data
+      # 容器内通过服务名访问 Java 服务
+      JAVA_SERVICE_URL: http://campuscare-java:8080
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma-data:/app/chroma_data
+    depends_on:
+      - redis
+
+  campuscare-java:
+    build: ./campus-care-java
+    container_name: campuscare-java
+    restart: always
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      PYTHON_AI_URL: http://python-ai:8000
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      python-ai:
+        condition: service_started
+
+volumes:
+  mysql-data:
+  chroma-data:

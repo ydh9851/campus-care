@@ -1,0 +1,31 @@
+# 统一换行符规则。
+#
+# 为什么需要这个文件？
+# Windows 的 Git 默认 core.autocrlf=true（提交转 LF、检出转 CRLF），
+# 但那是「每台电脑各自的本地配置」，换电脑或换系统就可能不一致。
+# 这个文件把规则写进仓库，跟着代码走，任何人 clone 下来行为都相同。
+#
+# 规则：仓库内一律存 LF，检出时也保持 LF（VSCode、IDEA、PyCharm 都能正确识别）。
+
+* text=auto eol=lf
+
+# 以下按扩展名显式声明，避免 Git 对二进制文件做行尾转换导致文件损坏
+*.jar    binary
+*.war    binary
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.svg    binary
+*.woff   binary
+*.woff2  binary
+*.ttf    binary
+*.pdf    binary
+
+# Windows 批处理脚本必须用 CRLF，否则某些情况下执行会异常
+*.bat    text eol=crlf
+*.cmd    text eol=crlf
+
+# Shell 脚本必须用 LF
+*.sh     text eol=lf
