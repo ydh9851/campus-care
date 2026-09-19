@@ -28,8 +28,11 @@ class Settings(BaseSettings):
     chroma_collection: str = "campus_psych_faq"
     faq_data_path: str = "./data/psych_faq.json"
     top_k: int = 3
-    embedding_provider: str = "local_hash"   # local_hash | bge
+    # bge = 中文语义向量（推荐）；local_hash = 零依赖字面匹配（降级）
+    embedding_provider: str = "bge"
     bge_model: str = "BAAI/bge-small-zh-v1.5"
+    # 检索相似度阈值。留空则按向量模型自带的默认值（哈希 0.15 / 语义 0.35）
+    retrieval_min_score: Optional[float] = None
 
     # ---------- 会话 ----------
     history_limit: int = 10

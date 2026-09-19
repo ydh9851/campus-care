@@ -14,6 +14,9 @@ openai>=1.30.0
 langgraph>=0.2.0,<0.3.0
 langchain-core>=0.3.0,<0.4.0
 
+# 向量化：BGE 中文语义模型（连带安装 torch，约 2GB，CPU 版即可）
+sentence-transformers>=6.0.0,<7.0.0
+
 # 向量库
 # 坑位说明：chromadb 依赖的 chroma-hnswlib 是 C++ 扩展。
 # 其 0.7.6 版在 Windows + Python 3.12 下【没有预编译 wheel】，pip 会去源码编译并报
@@ -22,6 +25,19 @@ langchain-core>=0.3.0,<0.4.0
 # 避免为了装依赖去装 4GB 的 MSVC Build Tools。Linux / macOS 下同样有 0.7.5 轮子，不受影响。
 chroma-hnswlib==0.7.5
 chromadb>=0.5.0,<0.6.0
+
+# ---------------------------------------------------------------------------
+# 下面三个是「chromadb 与 sentence-transformers 共存」的版本约束，不能删。
+#
+# 冲突链条：
+#   chromadb 0.5.4 依赖的 chroma-hnswlib 按 numpy 1.x 的 C API 编译，要求 numpy<2；
+#   而 scipy 1.14+ 与 scikit-learn 1.7+ 都要求 numpy>=2。
+# 两者直接矛盾。实测不锁版本时 pip 会装成 numpy 2.5.3，chromadb 直接导入失败。
+# 所以把 numpy / scipy / scikit-learn 全部锁在 numpy 1.x 这一侧。
+# ---------------------------------------------------------------------------
+numpy>=1.26,<2.0
+scipy>=1.13,<1.14
+scikit-learn>=1.5,<1.7
 
 # HTTP（调用 Java 服务 / 健康检查用）
 httpx>=0.27.0

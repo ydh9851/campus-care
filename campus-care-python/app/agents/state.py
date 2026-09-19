@@ -12,6 +12,7 @@ class RetrievedDoc(TypedDict):
     content: str
     category: str
     score: float
+    source: str
 
 
 class AgentState(TypedDict, total=False):
