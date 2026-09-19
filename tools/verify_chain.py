@@ -8,6 +8,11 @@
     ⑤ 同一会话续聊 → 消息落库条数正确
     ⑥ 生成咨询报告
     ⑦ 辅导员账号读工单列表 + 学生越权返回 403
+    ⑧ 心理科普：条目 / 分类 / 分类过滤 / 关键词过滤
+    ⑨ 心理测评：量表列表 → 取题 → 作答 → 计分与风险联动
+    ⑩ 心理档案：聚合视图 + 三处取最高的证据 + 越权 403
+    ⑪ 数据看板：趋势补零、时段 24 点、结论非空 + 越权 403
+    ⑫ 访问审计：查阅他人档案必须留痕，且审计日志仅管理员可见
 
 前置条件：Redis、MySQL、Java :8080、Python :8000 均已启动。
 
@@ -18,6 +23,7 @@ from __future__ import annotations
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 
 JAVA = "http://127.0.0.1:8080"
@@ -25,6 +31,7 @@ PY = "http://127.0.0.1:8000"
 
 STUDENT = {"username": "student01", "password": "123456"}
 COUNSELOR = {"username": "teacher01", "password": "123456"}
+ADMIN = {"username": "admin", "password": "123456"}
 
 _passed = 0
 _failed = 0
@@ -244,6 +251,185 @@ def step8_risk_alerts() -> None:
     check("student01 访问预警接口被拒 403（越权防护生效）", status == 403, f"HTTP {status}")
 
 
+def step9_knowledge(token: str) -> None:
+    section(9, "心理科普：知识库浏览与过滤")
+    status, body = call(f"{JAVA}/api/knowledge", token=token)
+    check("GET /api/knowledge 返回 200", status == 200, f"HTTP {status}")
+    items = unwrap(body) or []
+    check("条目数 > 100（语料已从 24 条扩充）", len(items) > 100, f"{len(items)} 条")
+    if items:
+        first = items[0]
+        check("条目字段完整（id/category/title/content/source）",
+              all(first.get(k) for k in ("id", "category", "title", "content", "source")),
+              str(first.get("title", "")))
+
+    status, body = call(f"{JAVA}/api/knowledge/categories", token=token)
+    cats = unwrap(body) or []
+    check("GET /api/knowledge/categories 返回 200 且非空", status == 200 and len(cats) > 0,
+          f"{len(cats)} 个分类")
+    total = sum(int(c.get("count") or 0) for c in cats)
+    # 分类统计与全量条目必须对得上，否则说明两侧过滤口径不一致。
+    # 额外要求 total > 0：两个空集合当然相等，那是没有意义的假通过。
+    check("各分类条数之和 == 条目总数（且不为空）", total == len(items) and total > 0,
+          f"{total} vs {len(items)}")
+
+    if cats:
+        target = cats[0].get("name")
+        expected = int(cats[0].get("count") or 0)
+        status, body = call(f"{JAVA}/api/knowledge?category={urllib.parse.quote(str(target))}", token=token)
+        hit = unwrap(body) or []
+        check(f"按分类过滤生效（{target}）", len(hit) == expected, f"{len(hit)} 条 / 期望 {expected}")
+        check("过滤结果的分类全都一致", all(i.get("category") == target for i in hit))
+
+    status, body = call(f"{JAVA}/api/knowledge?q={urllib.parse.quote('焦虑')}", token=token)
+    hit = unwrap(body) or []
+    check("关键词过滤生效且确实缩小了范围", 0 < len(hit) < len(items), f"命中 {len(hit)} 条")
+
+
+def step10_assessment(token: str) -> None:
+    section(10, "心理测评：量表作答与计分联动")
+    status, body = call(f"{JAVA}/api/assessment/scales", token=token)
+    scales = unwrap(body) or []
+    check("GET /api/assessment/scales 返回 200 且非空", status == 200 and len(scales) > 0,
+          f"{len(scales)} 个量表")
+
+    code = next((s.get("code") for s in scales if "PHQ" in str(s.get("code", "")).upper()), None)
+    code = code or (scales[0].get("code") if scales else None)
+    if not code:
+        check("能取到一个可作答的量表", False)
+        return
+
+    status, body = call(f"{JAVA}/api/assessment/scales/{code}", token=token)
+    detail = unwrap(body) or {}
+    questions = detail.get("questions") or []
+    check(f"GET /api/assessment/scales/{code} 返回题目与选项",
+          status == 200 and len(questions) > 0 and bool(detail.get("options")),
+          f"{len(questions)} 题")
+
+    if not questions:
+        return
+
+    # 全部选 0（"完全没有"）→ 最低分、最低风险，不影响任何人的预警状态。
+    # 4/5 分切档、PHQ-9 第 9 题单题高危这些边界逻辑交给单元测试，
+    # 在联调脚本里反复构造高危作答只会把演示数据搞脏。
+    status, body = call(f"{JAVA}/api/assessment/submit", "POST",
+                        {"scaleCode": code, "answers": [0] * len(questions)}, token)
+    result = unwrap(body) or {}
+    check("POST /api/assessment/submit 返回 200", status == 200, f"HTTP {status}")
+    record = result.get("record") or {}
+    check("全 0 作答 → totalScore == 0", record.get("totalScore") == 0, str(record.get("totalScore")))
+    check("全 0 作答 → riskLevel == LOW", record.get("riskLevel") == "LOW", str(record.get("riskLevel")))
+    check("未达建单门槛 → 不返回 alertId", not result.get("alertId"), str(result.get("alertId")))
+    check("返回分级标签与处置建议",
+          bool(record.get("severityLabel")) and bool(result.get("suggestion")),
+          str(record.get("severityLabel")))
+
+    status, body = call(f"{JAVA}/api/assessment/records", token=token)
+    records = unwrap(body) or []
+    check("GET /api/assessment/records 能看到刚提交的记录", len(records) > 0, f"{len(records)} 条")
+
+
+def step11_profile(token: str) -> None:
+    section(11, "学生心理档案：聚合视图与越权防护")
+    status, body = call(f"{JAVA}/api/profile/me", token=token)
+    profile = unwrap(body) or {}
+    check("GET /api/profile/me 返回 200", status == 200, f"HTTP {status}")
+    check("含 basic 与 overview 两段",
+          bool(profile.get("basic")) and bool(profile.get("overview")))
+
+    ov = profile.get("overview") or {}
+    check("overview.highestRiskLevel 取值合法",
+          ov.get("highestRiskLevel") in ("LOW", "MEDIUM", "HIGH"), str(ov.get("highestRiskLevel")))
+    # 第 5 步刚聊过高危内容，档案里的"综合最高风险"必须跟着升上去 ——
+    # 这正是「会话 / 工单 / 测评三处取最高」生效的证据。
+    check("会话已产生 HIGH → 档案综合最高风险也是 HIGH",
+          ov.get("highestRiskLevel") == "HIGH", str(ov.get("highestRiskLevel")))
+
+    timeline = profile.get("timeline") or []
+    check("timeline 非空且带事件类型",
+          bool(timeline) and bool(timeline[0].get("type")), f"{len(timeline)} 条")
+
+    status, _ = call(f"{JAVA}/api/profile/1", token=token)
+    check("student01 查看他人档案被拒 403（@PreAuthorize 生效）", status == 403, f"HTTP {status}")
+
+
+def step12_dashboard() -> None:
+    section(12, "辅导员数据看板：聚合口径与角色鉴权")
+    token = login(COUNSELOR)
+    check("teacher01（COUNSELOR）登录成功", bool(token))
+
+    status, body = call(f"{JAVA}/api/dashboard?days=14&topLimit=5", token=token)
+    board = unwrap(body) or {}
+    check("GET /api/dashboard 返回 200", status == 200, f"HTTP {status}")
+
+    summary = board.get("summary") or {}
+    check("summary 含累计工单与高危数",
+          int(summary.get("totalCount") or 0) > 0 and summary.get("highCount") is not None,
+          f"累计 {summary.get('totalCount')} / 高危 {summary.get('highCount')}")
+
+    trend = board.get("trend") or []
+    # 没有工单的日子必须补 0，否则折线会把断点连成直线，看着像在增长
+    check("趋势补齐成连续 14 天（不是只返回有数据的天）", len(trend) == 14, f"{len(trend)} 天")
+    if trend:
+        days = [t.get("day") for t in trend]
+        check("趋势日期严格递增且无重复",
+              days == sorted(days) and len(set(days)) == len(days), f"{days[0]} ~ {days[-1]}")
+
+    hours = board.get("hours") or []
+    check("时段分布恒为 24 个小时点", len(hours) == 24, f"{len(hours)} 个")
+
+    insights = board.get("insights") or []
+    check("insights 非空（看板要给结论，不能只给图）", bool(insights), f"{len(insights)} 条")
+    for line in insights[:3]:
+        print(f"           · {line}")
+
+    peak = board.get("peakWindow") or {}
+    if peak.get("available"):
+        check("peakWindow 的起止小时合法",
+              0 <= int(peak.get("startHour") or 0) < 24 and 0 <= int(peak.get("endHour") or 0) < 24,
+              f"{peak.get('startHour')}:00 ~ {peak.get('endHour')}:00（占 {peak.get('ratio')}%）")
+
+    status, _ = call(f"{JAVA}/api/dashboard", token=login(STUDENT))
+    check("student01 访问看板被拒 403", status == 403, f"HTTP {status}")
+
+
+def step13_audit() -> None:
+    section(13, "访问审计：敏感数据查阅留痕")
+    counselor = login(COUNSELOR)
+    status, _ = call(f"{JAVA}/api/profile/1", token=counselor)
+    check("teacher01 查看学生 1 的档案返回 200", status == 200, f"HTTP {status}")
+
+    admin = login(ADMIN)
+    check("admin（ADMIN）登录成功", bool(admin))
+    if not admin:
+        return
+
+    status, body = call(
+        f"{JAVA}/api/audit/logs?current=1&size=5&targetType=USER&targetId=1", token=admin)
+    check("管理员可查询审计日志", status == 200, f"HTTP {status}")
+    page = unwrap(body) or {}
+    records = page.get("records") or []
+    check("刚才那次查阅已经留痕", len(records) > 0, f"{len(records)} 条")
+
+    if records:
+        latest = records[0]
+        check("动作类型为 VIEW_PROFILE", latest.get("action") == "VIEW_PROFILE", str(latest.get("action")))
+        check("记录了操作人 id 与账号（账号冗余存，改名后仍可读）",
+              latest.get("operatorId") is not None and bool(latest.get("operatorName")),
+              f"{latest.get('operatorName')}(#{latest.get('operatorId')})")
+        check("记录了来源 IP", bool(latest.get("ip")), str(latest.get("ip")))
+        print(f"         最新审计: {latest.get('operatorName')} "
+              f"{latest.get('action')} {latest.get('targetType')}#{latest.get('targetId')} "
+              f"from {latest.get('ip')}")
+
+    # 审计日志记录的是「哪个辅导员看了哪个学生」，本身也是敏感数据。
+    # 对辅导员开放等于给了他们互相监视的能力，反而会让人不敢正常用系统。
+    status, _ = call(f"{JAVA}/api/audit/logs", token=login(STUDENT))
+    check("student01 访问审计日志被拒 403", status == 403, f"HTTP {status}")
+    status, _ = call(f"{JAVA}/api/audit/logs", token=login(COUNSELOR))
+    check("teacher01 访问审计日志被拒 403（辅导员也不能看）", status == 403, f"HTTP {status}")
+
+
 def main() -> int:
     print("=" * 72)
     print("CampusCare  Java ↔ Python 全链路联调验证")
@@ -266,6 +452,18 @@ def main() -> int:
     step6_messages(token, conversation_id)
     step7_report(token, conversation_id)
     step8_risk_alerts()
+
+    # 第 8 步为了验证越权，又登录了一次 student01。
+    # 本系统的 token 白名单是【单点登录】语义 —— 同一账号重新登录会让旧 token 立刻失效，
+    # 所以这里必须重新取一次，否则 ⑨⑩⑪ 会整段 401。
+    # （这个坑值得留着当文档：任何"重新登录"的代码都会把别处持有的 token 踢掉。）
+    token = login(STUDENT)
+
+    step9_knowledge(token)
+    step10_assessment(token)
+    step11_profile(token)
+    step12_dashboard()
+    step13_audit()
 
     print("\n" + "=" * 72)
     print(f"验证结束：通过 {_passed} 项，失败 {_failed} 项")

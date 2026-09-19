@@ -25,6 +25,9 @@ export const isCounselor = computed(() => {
 
 export async function login(username, password) {
   const data = await authApi.login(username, password)
+  if (!data || !data.token) {
+    throw new Error('登录失败，服务器未返回有效凭证，请稍后重试')
+  }
   setToken(data.token)
   state.user = {
     userId: data.userId,

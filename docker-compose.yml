@@ -1,5 +1,3 @@
-version: "3.8"
-
 # CampusCare 一键启动：MySQL + Redis + Python AI 服务 + Java 主服务
 # 用法：把 .env.example 复制成 .env 并填好 DEEPSEEK_API_KEY，然后 docker-compose up -d
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections import Counter
 from typing import List
 
 from fastapi import APIRouter
@@ -19,6 +20,7 @@ from app.agents.risk_agent import risk_node
 from app.agents.state import AgentState
 from app.graph.builder import get_graph, mermaid
 from app.llm import get_llm
+from app.rag.loader import load_faq
 from app.rag.store import get_store
 from app.schemas import AgentChatData, AgentChatRequest, Envelope, ReportData
 
@@ -318,3 +320,33 @@ def kb_search(q: str, topK: int = 3):
     """直接检索向量库，方便调参和演示 RAG 效果"""
     docs: List[dict] = get_store().search(q, top_k=topK)
     return Envelope.ok(docs)
+
+
+@router.get("/agent/kb/list")
+def kb_list(category: str | None = None, q: str | None = None):
+    """列出知识库条目，供「心理科普」页展示。
+
+    这里是**全量列举**，不走向量检索 —— 与 /agent/kb/search 的用途不同：
+    科普页要的是「按分类浏览全部内容」，检索接口要的是「按语义找最相关的几条」。
+    用检索接口做列表页会漏掉相关性低但用户想主动浏览的条目。
+    """
+    items = load_faq()
+
+    if category and category != "全部":
+        items = [i for i in items if i.get("category") == category]
+
+    if q and q.strip():
+        kw = q.strip().lower()
+        items = [
+            i for i in items
+            if kw in str(i.get("title", "")).lower() or kw in str(i.get("content", "")).lower()
+        ]
+
+    return Envelope.ok({"total": len(items), "items": items})
+
+
+@router.get("/agent/kb/categories")
+def kb_categories():
+    """分类及各自条数，供前端渲染筛选标签"""
+    counter = Counter(str(i.get("category") or "通用") for i in load_faq())
+    return Envelope.ok([{"name": name, "count": cnt} for name, cnt in counter.most_common()])

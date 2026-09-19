@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { assessmentApi } from '../api'
+import AppIcon from '../components/AppIcon.vue'
 import RiskBadge from '../components/RiskBadge.vue'
 import { shortTime } from '../format'
 
@@ -98,7 +99,10 @@ onMounted(loadList)
     <template v-if="step === 'list'">
       <div class="page-head">
         <div>
-          <span class="caption">心理测评</span>
+          <div class="sec-head">
+            <span class="chip sm"><AppIcon name="clipboard" :size="14" /></span>
+            <span class="caption">心理测评</span>
+          </div>
           <h1>标准量表自评</h1>
         </div>
         <span class="hint">结果仅用于心理健康状态初筛，不构成医学诊断</span>
@@ -106,13 +110,18 @@ onMounted(loadList)
 
       <div class="scale-grid">
         <button
-          v-for="s in scales"
+          v-for="(s, i) in scales"
           :key="s.code"
+          v-spotlight
+          v-reveal="i"
           type="button"
-          class="scale-card"
+          class="scale-card tile"
           @click="start(s.code)"
         >
-          <span class="s-name">{{ s.name }}</span>
+          <span class="s-top">
+            <span class="chip"><AppIcon name="clipboard" :size="17" /></span>
+            <span class="s-name">{{ s.name }}</span>
+          </span>
           <span class="s-intro">{{ s.intro }}</span>
 
           <span class="s-meta">
@@ -199,7 +208,10 @@ onMounted(loadList)
     <template v-else>
       <div class="page-head">
         <div>
-          <span class="caption">测评结果</span>
+          <div class="sec-head">
+            <span class="chip sm"><AppIcon name="trend" :size="14" /></span>
+            <span class="caption">测评结果</span>
+          </div>
           <h1>{{ result.record.scaleName }}</h1>
         </div>
         <button type="button" class="ghost-btn" @click="backToList">返回量表列表</button>
@@ -260,7 +272,8 @@ onMounted(loadList)
 .assessment {
   height: 100%;
   overflow-y: auto;
-  padding: 28px 32px 48px;
+  /* 超宽屏收窄内容，但滚动条仍贴窗口右缘（用 max-width 会把它顶到屏幕中间） */
+  padding: 28px max(32px, calc((100% - 1340px) / 2)) 48px;
 }
 
 .page-head {
@@ -271,10 +284,17 @@ onMounted(loadList)
 }
 
 .page-head h1 {
-  margin-top: 4px;
-  font-size: 20px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
+  margin-top: 8px;
+  font-size: var(--t-page);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  /* 大标题走品牌墨绿渐变：纯黑压在浅底上"太硬"，
+     字尾收在品牌色上，整页的色感才统一 */
+  background: linear-gradient(112deg, #12332c 0%, #2c5f52 70%, #3d7d6b 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  width: fit-content;
 }
 
 .meta-sep {
@@ -318,18 +338,22 @@ onMounted(loadList)
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 8px;
+  gap: 9px;
   padding: 18px 18px 16px;
   text-align: left;
-  background: var(--panel);
+  background: var(--panel-grad);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
+  box-shadow: 0 1px 2px rgba(20, 22, 26, 0.025);
   cursor: pointer;
-  transition: border-color 0.15s;
+  /* 抬起、染色、描边光晕、图标块翻实心 —— 统一交给全局的 .tile */
 }
 
-.scale-card:hover {
-  border-color: var(--brand);
+/* 图标块 + 量表名同行，量表名才不会被图标块挤成两行 */
+.s-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .s-name {
@@ -396,9 +420,11 @@ onMounted(loadList)
 
 .rec-list {
   margin-top: 12px;
+  background: var(--panel-grad);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   overflow: hidden;
+  box-shadow: 0 1px 2px rgba(20, 22, 26, 0.025);
 }
 
 .rec {
@@ -408,6 +434,15 @@ onMounted(loadList)
   padding: 11px 16px;
   font-size: 13px;
   border-bottom: 1px solid var(--line);
+  transition:
+    background-color 0.18s var(--ease),
+    box-shadow 0.18s var(--ease);
+}
+
+/* 左侧一条品牌色内影，代替整行变色 —— 和历史记录那种浅色表更配 */
+.rec:hover {
+  background: var(--panel-2);
+  box-shadow: inset 2px 0 0 var(--brand);
 }
 
 .rec:last-child {
@@ -472,9 +507,9 @@ onMounted(loadList)
 .progress span {
   display: block;
   height: 100%;
-  background: var(--brand);
+  background: var(--brand-grad);
   border-radius: 2px;
-  transition: width 0.2s;
+  transition: width 0.3s var(--ease-out);
 }
 
 .questions {
@@ -535,18 +570,27 @@ onMounted(loadList)
   font-size: 13px;
   color: var(--ink-2);
   cursor: pointer;
-  transition: all 0.12s;
+  transition:
+    transform 0.16s var(--ease),
+    border-color 0.16s var(--ease),
+    color 0.16s var(--ease),
+    background-color 0.16s var(--ease),
+    box-shadow 0.16s var(--ease);
 }
 
 .opt:hover {
-  border-color: var(--brand);
+  transform: translateY(-1px);
+  border-color: var(--brand-line);
+  background: var(--brand-soft);
   color: var(--brand);
 }
 
+/* 选中态带一点品牌色光晕：答题时"有没有点中"必须一眼可辨 */
 .opt.on {
-  background: var(--brand);
-  border-color: var(--brand);
+  background: var(--brand-grad);
+  border-color: transparent;
   color: #fff;
+  box-shadow: var(--glow);
 }
 
 .quiz-foot {
@@ -563,15 +607,22 @@ onMounted(loadList)
   padding: 0 24px;
   border: none;
   border-radius: var(--radius);
-  background: var(--brand);
+  background: var(--brand-grad);
   color: #fff;
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
+  box-shadow: var(--glow);
+  transition:
+    transform 0.18s var(--ease),
+    filter 0.18s var(--ease),
+    box-shadow 0.22s var(--ease);
 }
 
 .primary:hover:not(:disabled) {
-  background: var(--brand-ink);
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+  box-shadow: var(--lift), var(--glow);
 }
 
 .primary:disabled {
@@ -581,8 +632,14 @@ onMounted(loadList)
 
 /* ---------- 结果 ---------- */
 .result-card {
+  position: relative;
+  overflow: hidden;
   margin-top: 22px;
   padding: 24px;
+  /* 右上角一团品牌光：分数卡是结果页的主角，值得比别的卡片多一层光 */
+  background:
+    radial-gradient(380px 200px at 102% -24%, rgba(44, 95, 82, 0.1) 0%, rgba(44, 95, 82, 0) 70%),
+    var(--panel-grad);
 }
 
 .score-row {

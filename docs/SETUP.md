@@ -34,7 +34,7 @@ docker-compose up -d
 MySQL 首次启动会自动执行 `sql/init.sql`。演示数据需手动导入：
 
 ```bash
-docker exec -i campus-care-mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" campus_care < sql/demo_data.sql
+docker exec -i campuscare-mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" campus_care < sql/demo_data.sql
 ```
 
 ---
@@ -52,11 +52,20 @@ mysql -uroot -p campus_care < sql\demo_data.sql
 
 ### 2. Redis
 
+已注册为 Windows 系统服务（服务名 `Redis`），开机自动启动，正常无需任何操作。
+
 ```cmd
-redis-server.exe
+:: 查看状态，应显示 RUNNING
+sc query Redis
+
+:: 连通性，应返回 PONG
+C:\redis\redis-cli.exe ping
 ```
 
-Windows 下 Redis 通常以进程方式运行而非系统服务，关闭窗口即停止，重启电脑后不会自动启动，需要重新拉起。
+换机器或重装 Redis 时，以**管理员身份**运行 `C:\redis\install-redis-service.cmd` 重新注册。
+
+> 注意 `redis.windows-service.conf` 里的 `dir` 与 `logfile` 必须写绝对路径，且要用正斜杠。
+> 服务的工作目录不是 `C:\redis`；而引号内的反斜杠会被 Redis 配置解析器当成转义符（`\r` 会变成回车）。
 
 ### 3. Python AI 服务
 

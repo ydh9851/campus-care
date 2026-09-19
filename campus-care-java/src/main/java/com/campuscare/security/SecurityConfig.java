@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -21,6 +22,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -90,11 +92,25 @@ public class SecurityConfig {
         return http.build();
     }
 
-    /** 跨域配置：给 Vue3 前端（默认 5173）用 */
+    /** 允许跨域的来源，逗号分隔。生产环境用配置覆盖，不必改代码 */
+    @Value("${app.cors.allowed-origins:http://localhost:5173,http://127.0.0.1:5173}")
+    private String allowedOrigins;
+
+    /**
+     * 跨域配置：给 Vue3 前端（默认 5173）用。
+     *
+     * 这里用显式来源列表，而不是原来的 allowedOriginPatterns("*")：
+     * "*" 配合 allowCredentials(true) 等于告诉浏览器「任何网站都可以带凭据调我的接口」。
+     * 本项目 token 放在 Authorization 头而不是 Cookie 里，CSRF 风险有限，
+     * 但哪天改成 Cookie 存 token，这套配置会立刻变成漏洞 —— 不如现在就收窄。
+     */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of("*"));
+        config.setAllowedOrigins(Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isEmpty())
+                .toList());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);

@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { chatApi, consultStream, reportApi } from '../api'
+import AppIcon from '../components/AppIcon.vue'
 import RiskBadge from '../components/RiskBadge.vue'
 import { formatReply, hhmm, INTENT_LABEL, RISK_LABEL, shortTime } from '../format'
 
@@ -243,8 +244,14 @@ function scoreTone(score) {
     <!-- 左：会话列表 -->
     <aside class="side">
       <div class="side-head">
-        <span class="caption">我的会话</span>
-        <button type="button" class="new-btn" title="新建咨询" @click="newConversation">新建</button>
+        <div class="sec-head">
+          <span class="chip sm"><AppIcon name="chat" :size="14" /></span>
+          <span class="caption">我的会话</span>
+        </div>
+        <button type="button" class="new-btn" title="新建咨询" @click="newConversation">
+          <AppIcon name="chat" :size="13" />
+          新建
+        </button>
       </div>
 
       <div class="conv-list">
@@ -277,7 +284,8 @@ function scoreTone(score) {
           <RiskBadge v-if="current" :level="current.riskLevel" />
         </div>
         <button type="button" class="ghost-btn" :disabled="reportLoading" @click="openReport">
-          {{ reportLoading ? '生成中…' : '咨询报告' }}
+          <AppIcon name="clipboard" :size="14" />
+          <span>{{ reportLoading ? '生成中…' : '咨询报告' }}</span>
         </button>
       </header>
 
@@ -467,6 +475,9 @@ function scoreTone(score) {
 }
 
 .new-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border: 1px solid var(--line-2);
   background: var(--panel);
   border-radius: 4px;
@@ -474,6 +485,18 @@ function scoreTone(score) {
   font-size: 12.5px;
   color: var(--ink-2);
   cursor: pointer;
+  transition:
+    transform 0.18s var(--ease),
+    border-color 0.18s var(--ease),
+    color 0.18s var(--ease),
+    background-color 0.18s var(--ease);
+}
+
+.new-btn:hover {
+  transform: translateY(-1px);
+  border-color: var(--brand-line);
+  background: var(--brand-soft);
+  color: var(--brand);
 }
 
 .new-btn:hover {
@@ -499,14 +522,19 @@ function scoreTone(score) {
   border-radius: 0 var(--radius) var(--radius) 0;
   background: none;
   cursor: pointer;
+  transition:
+    background-color 0.18s var(--ease),
+    border-color 0.18s var(--ease);
 }
 
 .conv:hover {
-  background: #f0f0f2;
+  background: var(--panel-2);
 }
 
+/* 选中项用浅绿底 + 左侧品牌色竖条。
+   原来用纯白 —— 在浅灰侧栏里其实跳不出来，浅绿才有"选中了"的归属感。 */
 .conv.on {
-  background: var(--panel);
+  background: var(--brand-soft);
   border-left-color: var(--brand);
 }
 
@@ -535,21 +563,51 @@ function scoreTone(score) {
 
 /* ---------- 右侧 ---------- */
 .main {
+  position: relative;
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
 }
 
+/* 对话区底纹：一层从上往下淡出的点阵。
+   一大片纯白的消息区没有任何材质，看起来像"还没加载完"。
+   底纹垫在内容下面（z-index: 0），不跟着消息滚动 ——
+   读起来像一张压在纸下的纹理纸，而不是会动的壁纸。 */
+.main::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(44, 95, 82, 0.085) 1px, transparent 1px);
+  background-size: 20px 20px;
+  -webkit-mask-image: radial-gradient(80% 72% at 50% 0%, #000 0%, transparent 80%);
+  mask-image: radial-gradient(80% 72% at 50% 0%, #000 0%, transparent 80%);
+}
+
+.main > * {
+  position: relative;
+  z-index: 1;
+}
+
 .main-head {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   height: 56px;
   padding: 0 24px;
-  border-bottom: 1px solid var(--line);
   flex: none;
+  /* 玻璃：消息往上滚时会从下面透出来。
+     和全站顶栏用同一种材质 —— 材质不统一，"高级感"立刻散架。 */
+  background: rgba(255, 255, 255, 0.72);
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
+  backdrop-filter: blur(14px) saturate(180%);
+  border-bottom: 1px solid var(--line);
+  box-shadow: inset 0 1px 0 var(--glass-line);
 }
 
 .head-left {
@@ -568,20 +626,30 @@ function scoreTone(score) {
 }
 
 .ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   flex: none;
-  border: 1px solid var(--line-2);
-  background: var(--panel);
-  border-radius: var(--radius);
   height: 30px;
   padding: 0 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--panel);
   font-size: 13px;
   color: var(--ink-2);
   cursor: pointer;
+  transition:
+    transform 0.18s var(--ease),
+    border-color 0.18s var(--ease),
+    color 0.18s var(--ease),
+    box-shadow 0.18s var(--ease);
 }
 
 .ghost-btn:hover:not(:disabled) {
-  border-color: var(--brand);
+  transform: translateY(-1px);
+  border-color: var(--brand-line);
   color: var(--brand);
+  box-shadow: 0 8px 16px -12px rgba(44, 95, 82, 0.6);
 }
 
 .ghost-btn:disabled {

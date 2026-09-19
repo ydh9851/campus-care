@@ -1,0 +1,22 @@
+# 依赖与虚拟环境
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# 本地数据 / 日志 / 密钥（绝不能打进镜像）
+.env
+chroma_data/
+logs/
+*.log
+*.db
+*.sqlite3
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
+
+# 非运行产物
+.git/
+.github/

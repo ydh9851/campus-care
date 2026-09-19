@@ -3,6 +3,8 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { dashboardApi } from '../api'
+import AppIcon from '../components/AppIcon.vue'
+import CountUp from '../components/CountUp.vue'
 import EChart from '../components/EChart.vue'
 import RiskBadge from '../components/RiskBadge.vue'
 import { RISK_LABEL, shortTime } from '../format'
@@ -42,11 +44,12 @@ onMounted(load)
 const s = computed(() => data.value?.summary || {})
 
 const cards = computed(() => [
-  { label: '累计工单', value: s.value.totalCount ?? 0 },
-  { label: '高危工单', value: s.value.highCount ?? 0, tone: 'high' },
-  { label: '待处理', value: s.value.pendingCount ?? 0, tone: 'med' },
-  { label: '涉及学生', value: s.value.studentCount ?? 0 },
-  { label: '高危占比', value: `${s.value.highRatio ?? 0}%` },
+  { label: '累计工单', value: s.value.totalCount ?? 0, icon: 'clipboard' },
+  { label: '高危工单', value: s.value.highCount ?? 0, tone: 'high', icon: 'alert' },
+  { label: '待处理', value: s.value.pendingCount ?? 0, tone: 'med', icon: 'clock' },
+  { label: '涉及学生', value: s.value.studentCount ?? 0, icon: 'user' },
+  // 后缀和数值分开给：CountUp 只补间数字，'%' 不跟着跳
+  { label: '高危占比', value: s.value.highRatio ?? 0, suffix: '%', icon: 'trend' },
 ])
 
 /* ---------------- 图 1：风险等级环形 ---------------- */
@@ -214,7 +217,10 @@ const insights = computed(() => data.value?.insights || [])
       <!-- ---------- 头部 ---------- -->
       <div class="head">
         <div>
-          <span class="caption">辅导员工作台</span>
+          <div class="sec-head">
+            <span class="chip sm"><AppIcon name="dashboard" :size="14" /></span>
+            <span class="caption">辅导员工作台</span>
+          </div>
           <h1>风险态势看板</h1>
         </div>
         <div class="head-right">
@@ -238,17 +244,30 @@ const insights = computed(() => data.value?.insights || [])
 
       <!-- ---------- 数字卡 ---------- -->
       <div class="stats">
-        <div v-for="c in cards" :key="c.label" class="stat" :class="c.tone ? 'tone-' + c.tone : ''">
-          <span class="caption">{{ c.label }}</span>
-          <b class="num">{{ c.value }}</b>
+        <div
+          v-for="(c, i) in cards"
+          :key="c.label"
+          v-spotlight
+          v-reveal="i"
+          class="stat-card"
+          :class="[c.tone || '', c.tone ? 'tinted' : '']"
+        >
+          <span class="chip sm" :class="c.tone || ''">
+            <AppIcon :name="c.icon" :size="15" />
+          </span>
+          <b class="num"><CountUp :value="c.value" :suffix="c.suffix || ''" /></b>
+          <span class="st-l">{{ c.label }}</span>
         </div>
       </div>
 
       <!-- ---------- 结论 ----------
            看板不能只给图。辅导员要的是「我该先看谁」，
            所以把系统算出来的判断直接摆在图和数字前面。 -->
-      <div class="panel insights">
-        <span class="caption">结论</span>
+      <div v-reveal class="panel insights">
+        <div class="sec-head">
+          <span class="chip sm"><AppIcon name="sparkles" :size="14" /></span>
+          <span class="caption">结论</span>
+        </div>
         <ul>
           <li v-for="(text, i) in insights" :key="i">{{ text }}</li>
         </ul>
@@ -256,26 +275,35 @@ const insights = computed(() => data.value?.insights || [])
 
       <!-- ---------- 图区 ---------- -->
       <div class="grid-2">
-        <div class="panel block wide">
+        <div v-reveal class="panel block wide">
           <div class="block-head">
-            <span class="caption">近 {{ days }} 天工单趋势</span>
+            <div class="sec-head">
+              <span class="chip sm"><AppIcon name="trend" :size="14" /></span>
+              <span class="caption">近 {{ days }} 天工单趋势</span>
+            </div>
             <span class="hint">按天聚合，空白日已补零</span>
           </div>
           <EChart :option="trendOption" height="230px" />
         </div>
 
-        <div class="panel block">
+        <div v-reveal="1" class="panel block">
           <div class="block-head">
-            <span class="caption">风险等级分布</span>
+            <div class="sec-head">
+              <span class="chip sm"><AppIcon name="dashboard" :size="14" /></span>
+              <span class="caption">风险等级分布</span>
+            </div>
           </div>
           <EChart :option="donutOption" height="230px" />
         </div>
       </div>
 
       <div class="grid-2">
-        <div class="panel block wide">
+        <div v-reveal class="panel block wide">
           <div class="block-head">
-            <span class="caption">24 小时时段分布</span>
+            <div class="sec-head">
+              <span class="chip sm"><AppIcon name="clock" :size="14" /></span>
+              <span class="caption">24 小时时段分布</span>
+            </div>
             <span class="hint">
               <template v-if="data.peakWindow?.available">
                 深色为高峰窗口 {{ String(data.peakWindow.startHour).padStart(2, '0') }}:00–{{
@@ -288,9 +316,12 @@ const insights = computed(() => data.value?.insights || [])
           <EChart :option="hourOption" height="190px" />
         </div>
 
-        <div class="panel block">
+        <div v-reveal="1" class="panel block">
           <div class="block-head">
-            <span class="caption">工单来源构成</span>
+            <div class="sec-head">
+              <span class="chip sm"><AppIcon name="clipboard" :size="14" /></span>
+              <span class="caption">工单来源构成</span>
+            </div>
           </div>
           <div class="source-wrap">
             <EChart :option="sourceOption" height="46px" />
@@ -315,9 +346,12 @@ const insights = computed(() => data.value?.insights || [])
       </div>
 
       <!-- ---------- 重点学生 ---------- -->
-      <div class="panel block">
+      <div v-reveal class="panel block">
         <div class="block-head">
-          <span class="caption">重点学生</span>
+          <div class="sec-head">
+            <span class="chip sm"><AppIcon name="user" :size="14" /></span>
+            <span class="caption">重点学生</span>
+          </div>
           <span class="hint">按高危工单数排序，点击进入完整档案</span>
         </div>
         <div v-if="!topStudents.length" class="empty" style="height: 80px">暂无数据</div>
@@ -343,6 +377,7 @@ const insights = computed(() => data.value?.insights || [])
               待处理 {{ stu.pendingCount }}
             </span>
             <span class="num stu-time">{{ shortTime(stu.lastTime) }}</span>
+            <AppIcon name="arrow" :size="15" class="stu-go" />
           </div>
         </div>
       </div>
@@ -354,7 +389,8 @@ const insights = computed(() => data.value?.insights || [])
 .dash {
   height: 100%;
   overflow-y: auto;
-  padding: 28px 32px 48px;
+  /* 超宽屏收窄内容，但滚动条仍贴窗口右缘（用 max-width 会把它顶到屏幕中间） */
+  padding: 28px max(32px, calc((100% - 1340px) / 2)) 48px;
 }
 
 /* ---------- 头部 ---------- */
@@ -366,10 +402,17 @@ const insights = computed(() => data.value?.insights || [])
 }
 
 .head h1 {
-  margin-top: 6px;
-  font-size: 22px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
+  margin-top: 8px;
+  font-size: var(--t-page);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  /* 大标题走品牌墨绿渐变：纯黑压在浅底上"太硬"，
+     字尾收在品牌色上，整页的色感才是统一的 */
+  background: linear-gradient(112deg, #12332c 0%, #2c5f52 70%, #3d7d6b 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  width: fit-content;
 }
 
 .head-right {
@@ -433,27 +476,30 @@ const insights = computed(() => data.value?.insights || [])
   margin-top: 22px;
 }
 
-.stat {
-  padding: 13px 15px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
 }
 
-.stat b {
-  display: block;
-  margin-top: 5px;
-  font-size: 22px;
+.stat-card b {
+  font-size: 23px;
   font-weight: 500;
   line-height: 1.1;
   letter-spacing: -0.02em;
+  color: var(--ink);
 }
 
-.tone-high b {
+.stat-card.high b {
   color: var(--high);
 }
-.tone-med b {
+.stat-card.med b {
   color: var(--med);
+}
+
+.st-l {
+  font-size: 12px;
+  color: var(--ink-3);
 }
 
 /* ---------- 结论 ---------- */
@@ -502,10 +548,10 @@ const insights = computed(() => data.value?.insights || [])
 
 .block-head {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 6px;
+  margin-bottom: 10px;
 }
 
 .block-head .hint {
@@ -550,19 +596,37 @@ const insights = computed(() => data.value?.insights || [])
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 10px 8px;
-  margin: 0 -8px;
+  padding: 10px;
+  margin: 0 -10px;
   border-top: 1px solid var(--line);
   border-radius: var(--radius);
   cursor: pointer;
+  transition:
+    background-color 0.2s var(--ease),
+    box-shadow 0.2s var(--ease);
 }
 
 .stu-row:first-child {
   border-top: none;
 }
 
+/* 悬停时左侧长出一条品牌色内影，代替"整行变灰"。
+   整行变色在浅色表里很吵，一条竖线既安静又能指出"你正停在这一行"。 */
 .stu-row:hover {
   background: var(--panel-2);
+  box-shadow: inset 2px 0 0 var(--brand);
+}
+
+.stu-go {
+  color: var(--ink-4);
+  transition:
+    transform 0.22s var(--ease),
+    color 0.22s var(--ease);
+}
+
+.stu-row:hover .stu-go {
+  color: var(--brand);
+  transform: translateX(3px);
 }
 
 .stu-name {

@@ -138,6 +138,29 @@ CREATE TABLE `assessment_record` (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '心理测评记录表';
 
 -- ------------------------------------------------------------
+-- access_log 敏感数据访问审计
+-- 心理档案属于敏感个人信息，辅导员每次查阅都必须留痕：
+-- 谁、什么时候、看了哪个学生的什么内容、来源 IP。
+-- 只记「查阅」和「处置」这类需要追责的动作，不记正常业务写入，
+-- 否则日志会被大量无用记录淹没，真出事时反而查不出来。
+-- ------------------------------------------------------------
+CREATE TABLE `access_log` (
+    `id`            BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
+    `operator_id`   BIGINT       NOT NULL COMMENT '操作人（辅导员/管理员）id',
+    `operator_name` VARCHAR(50)           DEFAULT NULL COMMENT '操作人账号，冗余存一份：人员改名或注销后日志仍可读',
+    `action`        VARCHAR(32)  NOT NULL COMMENT '动作：VIEW_PROFILE 查看档案 / HANDLE_ALERT 处置工单',
+    `target_type`   VARCHAR(20)           DEFAULT NULL COMMENT '对象类型：USER / ALERT',
+    `target_id`     BIGINT                DEFAULT NULL COMMENT '对象 id',
+    `detail`        VARCHAR(255)          DEFAULT NULL COMMENT '补充说明',
+    `ip`            VARCHAR(64)           DEFAULT NULL COMMENT '来源 IP（含反向代理透传的 X-Forwarded-For）',
+    `create_time`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_operator_time` (`operator_id`, `create_time`),
+    KEY `idx_target` (`target_type`, `target_id`),
+    KEY `idx_create_time` (`create_time`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '敏感数据访问审计日志';
+
+-- ------------------------------------------------------------
 -- 初始化数据
 -- 密码明文均为 123456，下面存的是 BCrypt 值
 -- ------------------------------------------------------------

@@ -3,6 +3,8 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { riskApi } from '../api'
+import AppIcon from '../components/AppIcon.vue'
+import CountUp from '../components/CountUp.vue'
 import RiskBadge from '../components/RiskBadge.vue'
 import { shortTime } from '../format'
 
@@ -33,11 +35,20 @@ const RISK_TABS = [
 ]
 
 const cards = computed(() => [
-  { key: 'pendingCount', label: '待处理', tone: 'brand' },
-  { key: 'highCount', label: '高危', tone: 'high' },
-  { key: 'mediumCount', label: '关注', tone: 'med' },
-  { key: 'totalCount', label: '累计工单', tone: 'plain' },
+  { key: 'pendingCount', label: '待处理', tone: 'brand', icon: 'clock' },
+  { key: 'highCount', label: '高危', tone: 'high', icon: 'alert' },
+  { key: 'mediumCount', label: '关注', tone: 'med', icon: 'shield' },
+  { key: 'totalCount', label: '累计工单', tone: 'plain', icon: 'clipboard' },
 ])
+
+/* 只有跟风险有关的两张卡染底色。四张全染 = 什么都强调 = 没有强调 */
+function cardClass(tone) {
+  return tone === 'high' || tone === 'med' ? `${tone} tinted` : ''
+}
+
+function chipClass(tone) {
+  return tone === 'high' || tone === 'med' ? tone : ''
+}
 
 function statNum(key) {
   // 后端的 SUM(CASE WHEN ...) 在没有数据时会返回 null
@@ -113,22 +124,38 @@ onMounted(() => {
   <div class="alerts">
     <div class="page-head">
       <div>
-        <span class="caption">辅导员工作台</span>
+        <div class="sec-head">
+          <span class="chip sm"><AppIcon name="alert" :size="14" /></span>
+          <span class="caption">辅导员工作台</span>
+        </div>
         <h1>风险预警工单</h1>
       </div>
-      <button type="button" class="ghost-btn" @click="load(); loadStats()">刷新</button>
+      <button type="button" class="ghost-btn" @click="load(); loadStats()">
+        <AppIcon name="refresh" :size="14" />
+        刷新
+      </button>
     </div>
 
     <!-- 统计 -->
     <div class="stats">
-      <div v-for="c in cards" :key="c.key" class="stat" :class="'tone-' + c.tone">
-        <span class="caption">{{ c.label }}</span>
-        <b class="num">{{ statNum(c.key) }}</b>
+      <div
+        v-for="(c, i) in cards"
+        :key="c.key"
+        v-spotlight
+        v-reveal="i"
+        class="stat-card"
+        :class="cardClass(c.tone)"
+      >
+        <span class="chip sm" :class="chipClass(c.tone)">
+          <AppIcon :name="c.icon" :size="15" />
+        </span>
+        <b class="num" :class="c.tone"><CountUp :value="statNum(c.key)" /></b>
+        <span class="st-l">{{ c.label }}</span>
       </div>
     </div>
 
     <!-- 筛选 -->
-    <div class="filters">
+    <div v-reveal class="filters">
       <div class="seg">
         <button
           v-for="t in STATUS_TABS"
@@ -154,7 +181,7 @@ onMounted(() => {
     </div>
 
     <!-- 表格 -->
-    <div class="panel table-wrap">
+    <div v-reveal class="panel table-wrap">
       <el-table
         v-loading="loading"
         :data="rows"
@@ -304,7 +331,8 @@ onMounted(() => {
 .alerts {
   height: 100%;
   overflow-y: auto;
-  padding: 28px 32px 40px;
+  /* 超宽屏收窄内容，但滚动条仍贴窗口右缘（用 max-width 会把它顶到屏幕中间） */
+  padding: 28px max(32px, calc((100% - 1340px) / 2)) 40px;
 }
 
 .page-head {
@@ -315,26 +343,43 @@ onMounted(() => {
 }
 
 .page-head h1 {
-  margin-top: 4px;
-  font-size: 20px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
+  margin-top: 8px;
+  font-size: var(--t-page);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  /* 大标题走品牌墨绿渐变：纯黑压在浅底上"太硬"，
+     字尾收在品牌色上，整页的色感才统一 */
+  background: linear-gradient(112deg, #12332c 0%, #2c5f52 70%, #3d7d6b 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  width: fit-content;
 }
 
 .ghost-btn {
-  border: 1px solid var(--line-2);
-  background: var(--panel);
-  border-radius: var(--radius);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   height: 32px;
   padding: 0 14px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--panel);
   font-size: 13px;
   color: var(--ink-2);
   cursor: pointer;
+  transition:
+    transform 0.18s var(--ease),
+    border-color 0.18s var(--ease),
+    color 0.18s var(--ease),
+    box-shadow 0.18s var(--ease);
 }
 
 .ghost-btn:hover {
-  border-color: var(--brand);
+  transform: translateY(-1px);
+  border-color: var(--brand-line);
   color: var(--brand);
+  box-shadow: 0 8px 16px -12px rgba(44, 95, 82, 0.6);
 }
 
 /* ---------- 统计 ---------- */
@@ -345,33 +390,33 @@ onMounted(() => {
   margin-top: 20px;
 }
 
-.stat {
-  padding: 14px 16px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
 }
 
-.stat b {
-  display: block;
-  margin-top: 6px;
+.stat-card b {
   font-size: 24px;
   font-weight: 500;
   line-height: 1.1;
   letter-spacing: -0.02em;
+  color: var(--ink);
 }
 
-.tone-brand b {
+.stat-card.brand b {
   color: var(--brand);
 }
-.tone-high b {
+.stat-card.high b {
   color: var(--high);
 }
-.tone-med b {
+.stat-card.med b {
   color: var(--med);
 }
-.tone-plain b {
-  color: var(--ink);
+
+.st-l {
+  font-size: 12px;
+  color: var(--ink-3);
 }
 
 /* ---------- 筛选 ---------- */
@@ -401,7 +446,7 @@ onMounted(() => {
 
 .seg button.on {
   background: var(--panel);
-  color: var(--ink);
+  color: var(--brand);
   font-weight: 500;
   box-shadow: 0 1px 2px rgba(20, 22, 26, 0.06);
 }

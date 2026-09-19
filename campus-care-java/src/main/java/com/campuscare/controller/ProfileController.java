@@ -3,6 +3,7 @@ package com.campuscare.controller;
 import com.campuscare.common.Result;
 import com.campuscare.dto.StudentProfile;
 import com.campuscare.security.SecurityUtils;
+import com.campuscare.service.AuditService;
 import com.campuscare.service.ProfileService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProfileController {
 
     private final ProfileService profileService;
+    private final AuditService auditService;
 
     @Operation(summary = "我的心理档案")
     @GetMapping("/me")
@@ -39,6 +41,10 @@ public class ProfileController {
     @PreAuthorize("hasAnyRole('COUNSELOR', 'ADMIN')")
     @GetMapping("/{userId}")
     public Result<StudentProfile> ofUser(@PathVariable Long userId) {
+        // 查阅他人心理档案属于敏感操作：先留痕，再返回数据。
+        // 自己的档案（/me）不记 —— 学生看自己的记录不构成"访问他人隐私"，记了只是噪音。
+        auditService.record(AuditService.VIEW_PROFILE, AuditService.TARGET_USER,
+                userId, "查看学生心理档案");
         return Result.ok(profileService.build(userId));
     }
 }

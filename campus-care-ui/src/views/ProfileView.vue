@@ -3,6 +3,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { profileApi } from '../api'
+import AppIcon from '../components/AppIcon.vue'
+import CountUp from '../components/CountUp.vue'
 import RiskBadge from '../components/RiskBadge.vue'
 import { RISK_LABEL, shortTime } from '../format'
 
@@ -34,14 +36,21 @@ watch(targetUserId, load)
 const o = computed(() => profile.value?.overview || {})
 const basic = computed(() => profile.value?.basic || {})
 
-const cards = computed(() => [
-  { label: '咨询会话', value: o.value.conversationCount },
-  { label: '累计轮次', value: o.value.totalTurns },
-  { label: '风险工单', value: o.value.alertCount },
-  { label: '待处理', value: o.value.pendingAlertCount, tone: 'brand' },
-  { label: '高危工单', value: o.value.highAlertCount, tone: 'high' },
-  { label: '测评次数', value: o.value.assessmentCount },
-])
+const cards = computed(() => {
+  const raw = [
+    { label: '咨询会话', value: o.value.conversationCount, icon: 'chat' },
+    { label: '累计轮次', value: o.value.totalTurns, icon: 'trend' },
+    { label: '风险工单', value: o.value.alertCount, icon: 'alert' },
+    { label: '待处理', value: o.value.pendingAlertCount, icon: 'clock', tone: 'brand' },
+    { label: '高危工单', value: o.value.highAlertCount, icon: 'shield', tone: 'high' },
+    { label: '测评次数', value: o.value.assessmentCount, icon: 'clipboard' },
+  ]
+  return raw.map((c) => {
+    // 只有风险相关的那两张染底色。六张卡全染色 = 什么都强调 = 没有强调。
+    const risky = c.tone === 'high' || c.tone === 'med'
+    return { ...c, cardClass: risky ? [c.tone, 'tinted'] : '', chipClass: risky ? c.tone : '' }
+  })
+})
 
 /* ---------------- 情绪趋势（手绘 SVG，不引图表库） ----------------
    为什么不用 ECharts？单条折线用 ECharts 要引入 1MB 的库 + 一层容器尺寸适配，
@@ -117,7 +126,10 @@ function eventTone(item) {
       <!-- ---------- 头部 ---------- -->
       <div class="head">
         <div class="who">
-          <span class="caption">{{ isSelf ? '我的心理档案' : '学生心理档案' }}</span>
+          <div class="sec-head">
+            <span class="chip sm"><AppIcon name="user" :size="14" /></span>
+            <span class="caption">{{ isSelf ? '我的心理档案' : '学生心理档案' }}</span>
+          </div>
           <h1>
             {{ basic.realName || basic.username }}
             <span v-if="basic.studentNo" class="no num">{{ basic.studentNo }}</span>
@@ -137,16 +149,29 @@ function eventTone(item) {
 
       <!-- ---------- 数字卡 ---------- -->
       <div class="stats">
-        <div v-for="c in cards" :key="c.label" class="stat" :class="c.tone ? 'tone-' + c.tone : ''">
-          <span class="caption">{{ c.label }}</span>
-          <b class="num">{{ c.value ?? 0 }}</b>
+        <div
+          v-for="(c, i) in cards"
+          :key="c.label"
+          v-spotlight
+          v-reveal="i"
+          class="stat-card"
+          :class="c.cardClass"
+        >
+          <span class="chip sm" :class="c.chipClass">
+            <AppIcon :name="c.icon" :size="15" />
+          </span>
+          <b class="num" :class="c.tone || ''"><CountUp :value="c.value ?? 0" /></b>
+          <span class="st-l">{{ c.label }}</span>
         </div>
       </div>
 
       <!-- ---------- 情绪趋势 ---------- -->
-      <div class="panel block">
+      <div v-reveal class="panel block">
         <div class="block-head">
-          <span class="caption">情绪趋势</span>
+          <div class="sec-head">
+            <span class="chip sm"><AppIcon name="trend" :size="14" /></span>
+            <span class="caption">情绪趋势</span>
+          </div>
           <span class="hint">
             来自 {{ trend.length }} 份咨询报告，越高表示情绪越积极
             <template v-if="o.latestEmotionScore !== null && o.latestEmotionScore !== undefined">
@@ -186,9 +211,12 @@ function eventTone(item) {
       <!-- ---------- 两栏 ---------- -->
       <div class="cols">
         <!-- 左：时间线 -->
-        <div class="panel block">
+        <div v-reveal class="panel block">
           <div class="block-head">
-            <span class="caption">事件时间线</span>
+            <div class="sec-head">
+              <span class="chip sm"><AppIcon name="clock" :size="14" /></span>
+              <span class="caption">事件时间线</span>
+            </div>
             <span class="hint">最近 {{ profile.timeline.length }} 条</span>
           </div>
 
@@ -215,9 +243,12 @@ function eventTone(item) {
 
         <!-- 右：测评 + 工单 -->
         <div class="right-col">
-          <div class="panel block">
+          <div v-reveal class="panel block">
             <div class="block-head">
-              <span class="caption">测评记录</span>
+              <div class="sec-head">
+                <span class="chip sm"><AppIcon name="clipboard" :size="14" /></span>
+                <span class="caption">测评记录</span>
+              </div>
               <span class="hint">{{ profile.assessments.length }} 次</span>
             </div>
             <div v-if="!profile.assessments.length" class="empty" style="height: 80px">尚未测评</div>
@@ -236,9 +267,12 @@ function eventTone(item) {
             </div>
           </div>
 
-          <div class="panel block">
+          <div v-reveal="1" class="panel block">
             <div class="block-head">
-              <span class="caption">风险工单</span>
+              <div class="sec-head">
+                <span class="chip sm"><AppIcon name="alert" :size="14" /></span>
+                <span class="caption">风险工单</span>
+              </div>
               <span class="hint">{{ profile.alerts.length }} 条</span>
             </div>
             <div v-if="!profile.alerts.length" class="empty" style="height: 80px">没有风险工单</div>
@@ -268,7 +302,8 @@ function eventTone(item) {
 .profile {
   height: 100%;
   overflow-y: auto;
-  padding: 28px 32px 48px;
+  /* 超宽屏收窄内容，但滚动条仍贴窗口右缘（用 max-width 会把它顶到屏幕中间） */
+  padding: 28px max(32px, calc((100% - 1340px) / 2)) 48px;
 }
 
 /* ---------- 头部 ---------- */
@@ -283,10 +318,13 @@ function eventTone(item) {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  margin-top: 6px;
-  font-size: 22px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
+  margin-top: 8px;
+  font-size: var(--t-page);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  /* 这里不能用渐变文字：h1 里还装着徽章等子元素，
+     background-clip: text 会把子元素一起变透明 */
+  color: var(--brand-deep);
 }
 
 .no {
@@ -319,27 +357,33 @@ function eventTone(item) {
   margin-top: 22px;
 }
 
-.stat {
-  padding: 13px 15px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
 }
 
-.stat b {
-  display: block;
-  margin-top: 5px;
+.stat-card b {
   font-size: 22px;
   font-weight: 500;
   line-height: 1.1;
   letter-spacing: -0.02em;
+  color: var(--ink);
 }
 
-.tone-brand b {
+.stat-card.brand b {
   color: var(--brand);
 }
-.tone-high b {
+.stat-card.high b {
   color: var(--high);
+}
+.stat-card.med b {
+  color: var(--med);
+}
+
+.st-l {
+  font-size: 12px;
+  color: var(--ink-3);
 }
 
 /* ---------- 通用块 ---------- */
@@ -350,7 +394,7 @@ function eventTone(item) {
 
 .block-head {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 12px;
@@ -523,13 +567,22 @@ function eventTone(item) {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 0;
+  padding: 9px 8px;
+  margin: 0 -8px;
   border-top: 1px solid var(--line);
+  border-radius: var(--radius);
+  transition:
+    background-color 0.18s var(--ease),
+    box-shadow 0.18s var(--ease);
 }
 
 .row-item:first-child {
   border-top: none;
-  padding-top: 0;
+}
+
+.row-item:hover {
+  background: var(--panel-2);
+  box-shadow: inset 2px 0 0 var(--brand);
 }
 
 .row-main {

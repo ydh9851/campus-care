@@ -40,6 +40,54 @@
   --font: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", -apple-system,
     BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Consolas, monospace;
+
+  /* ---------- 层次与动效 ----------
+     从这里开始是为了「高级感」加的，但规则不变：仍然只有一个色相。
+     渐变色、光晕、投影全部从品牌墨绿派生，不引入第二个颜色 ——
+     一页里出现两种以上色系，那种"廉价感"立刻就来。
+     缓动统一用同一条曲线，动效才不会各走各的。 */
+  --brand-soft: #e9f2ef;
+  --brand-deep: #16332c;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* 抬起：一层贴近的浅影 + 一层远一点的柔影，两层才有"离开纸面"的感觉 */
+  --lift: 0 1px 2px rgba(20, 22, 26, 0.04), 0 14px 30px -12px rgba(20, 22, 26, 0.18);
+  --lift-lg: 0 2px 4px rgba(20, 22, 26, 0.05), 0 24px 48px -16px rgba(20, 22, 26, 0.22);
+  /* 品牌色光晕，用在主按钮和 Logo 上 */
+  --glow: 0 10px 30px -12px rgba(44, 95, 82, 0.45);
+
+  /* 品牌渐变：按钮、图标块、强调条共用同一支渐变，方向统一 135°。
+     如果每个组件各写一支渐变，方向/明度稍有出入，整页就会"散"。 */
+  --brand-grad: linear-gradient(135deg, #3d7d6b 0%, #2c5f52 54%, #234f45 100%);
+
+  /* 卡片表面：不用纯白。底部压 2~3 个色阶的灰，静态看就有"厚度"，
+     而不是一张贴在灰底上的白纸。 */
+  --panel-grad: linear-gradient(180deg, #ffffff 0%, #fcfdfd 58%, #f8faf9 100%);
+
+  /* 聚焦圈统一用同一支，避免每个输入框各写一遍 box-shadow */
+  --ring: 0 0 0 3.5px rgba(44, 95, 82, 0.13);
+
+  /* ---------- 背景极光 ----------
+     三团光斑的色相全部锁在品牌墨绿的 ±25° 内。
+     背景一旦出现第二个色系，整页的"贵"立刻就没了。 */
+  --aurora-1: rgba(61, 125, 107, 0.38);
+  --aurora-2: rgba(44, 95, 82, 0.24);
+  --aurora-3: rgba(122, 168, 155, 0.34);
+
+  /* 玻璃拟态。饱和度调高一点，模糊之后的灰才不发死 */
+  --glass: rgba(255, 255, 255, 0.7);
+  --glass-line: rgba(255, 255, 255, 0.72);
+
+  /* 更远的一层投影，给主卡片和浮层用。三层叠加才有真正的纵深 */
+  --float:
+    0 1px 1px rgba(20, 22, 26, 0.03), 0 8px 16px -8px rgba(20, 22, 26, 0.1),
+    0 32px 56px -24px rgba(20, 22, 26, 0.18);
+
+  /* 字号阶梯。用 clamp 而不是媒体查询：
+     窗口一窄自动收，不用为每个断点各写一遍。 */
+  --t-hero: clamp(28px, 3.4vw, 40px);
+  --t-page: clamp(22px, 2.2vw, 27px);
 }
 
 /* ---------- Element Plus 主题覆盖：把默认蓝换成墨绿，圆角收小 ---------- */
@@ -82,7 +130,13 @@ body,
 }
 
 body {
-  background: var(--bg);
+  /* 两层极淡的径向光晕垫在灰底上，拉开一点空间感。
+     强度刻意压到几乎看不见 —— 背景一旦抢戏，内容就显得脏。 */
+  background:
+    radial-gradient(1100px 640px at 10% -10%, #eef4f2 0%, rgba(238, 244, 242, 0) 60%),
+    radial-gradient(900px 540px at 98% 2%, #eef1f4 0%, rgba(238, 241, 244, 0) 56%),
+    var(--bg);
+  background-attachment: fixed;
   color: var(--ink);
   font-family: var(--font);
   font-size: 14px;
@@ -138,10 +192,33 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
+/* 分节标题：一枚图标块 + 一行小标签。
+   全站的"新的一段开始了"都长这样，扫一眼就能定位。 */
+.sec-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
 .panel {
-  background: var(--panel);
+  position: relative;
+  background: var(--panel-grad);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
+  /* 三层：贴地的一层 + 一道内高光 + 一层很远的柔影。
+     内高光（inset 0 1px 0）是"上边缘被光打到"的暗示 ——
+     浅色卡片有没有它，就是"糊在背景上"和"浮在背景上"的分界。 */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 1px 2px rgba(20, 22, 26, 0.03),
+    0 14px 30px -26px rgba(20, 22, 26, 0.28);
+}
+
+/* 玻璃拟态。全站的浮层、顶栏都用它，保证"浮起来的东西"是同一种材质 */
+.glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  backdrop-filter: blur(18px) saturate(180%);
 }
 
 .hint {
@@ -157,4 +234,364 @@ a {
   height: 100%;
   color: var(--ink-3);
   font-size: 13px;
+}
+
+/* =============================================================
+   动效层
+   三条自我约束，避免"动效一多就俗"：
+     1. 只动 transform 和 opacity —— 不触发布局重排，也不掉帧
+     2. 时长压在 160~420ms。再长就显得迟钝，再短就看不见
+     3. 抬起幅度不超过 3px。夸张的位移是廉价感的主要来源
+   ============================================================= */
+
+/* ---------- 可交互卡片 ----------
+   任何"点得动"的方块都加 .tile，视觉反馈才一致。
+   ::after 是悬停时淡入的品牌色斜向渐变，只做一层很淡的染色，
+   配合描边变色和抬起，三件事同时发生才像"被点亮"。 */
+.tile {
+  position: relative;
+  transition:
+    transform 0.22s var(--ease),
+    border-color 0.22s var(--ease),
+    box-shadow 0.22s var(--ease),
+    background-color 0.22s var(--ease);
+}
+
+/* 悬停高光 = 跟着鼠标走的一圈柔光 + 一层固定的斜向染色。
+   鼠标还没进来时 --mx/--my 取默认值，所以静态下也有一层均匀的底光，
+   不会出现"半边亮、半边黑"。
+
+   这是「贵」和「不贵」之间最划算的一笔：不加 DOM、不改布局，
+   鼠标一动整张卡面就像被打了光 —— 坐标由 v-spotlight 指令写进变量。 */
+.tile::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(
+      360px circle at var(--mx, 50%) var(--my, -12%),
+      rgba(44, 95, 82, 0.15) 0%,
+      rgba(44, 95, 82, 0.05) 40%,
+      rgba(44, 95, 82, 0) 70%
+    ),
+    linear-gradient(155deg, rgba(44, 95, 82, 0.045) 0%, rgba(44, 95, 82, 0) 58%);
+  opacity: 0;
+  transition: opacity 0.28s var(--ease);
+  pointer-events: none;
+}
+
+/* 悬停时沿卡片边缘"长"出一圈渐变描边。
+   用 mask 掏空中间只留 1px，比直接改 border-color 更有质感：
+   描边本身是渐变的，左上重、右下轻，像有光从左上打过来。 */
+.tile::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    140deg,
+    rgba(44, 95, 82, 0.5) 0%,
+    rgba(44, 95, 82, 0.06) 46%,
+    rgba(44, 95, 82, 0) 76%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.24s var(--ease);
+  pointer-events: none;
+}
+
+.tile:hover {
+  transform: translateY(-3px);
+  border-color: var(--brand-line);
+  box-shadow: var(--lift);
+}
+
+.tile:hover::after,
+.tile:hover::before {
+  opacity: 1;
+}
+
+.tile:active {
+  transform: translateY(-1px);
+  transition-duration: 0.08s;
+  box-shadow: var(--shadow);
+}
+
+/* ---------- 图标块 ----------
+   卡片左上角那枚小方块，是全站唯一的"彩色锚点"。
+   纯白卡片靠它拿到视觉重心，而不是靠堆阴影。
+   悬停时整块翻成实心品牌色 —— 一张卡片的"开关"就这一下，不多做。 */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  box-shadow: inset 0 0 0 1px rgba(44, 95, 82, 0.08);
+  transition:
+    background-color 0.24s var(--ease),
+    color 0.24s var(--ease),
+    box-shadow 0.24s var(--ease),
+    transform 0.28s var(--ease-out);
+}
+
+.chip.sm {
+  width: 27px;
+  height: 27px;
+  border-radius: 7px;
+}
+
+.chip.lg {
+  width: 42px;
+  height: 42px;
+  border-radius: 11px;
+}
+
+.tile:hover .chip {
+  background: var(--brand-grad);
+  color: #fff;
+  box-shadow: var(--glow);
+  transform: translateY(-1px) scale(1.05);
+}
+
+/* 风险色的图标块：不参与"翻实心"的悬停，否则高危红会变成品牌绿，语义就错了 */
+.chip.high {
+  background: var(--high-bg);
+  color: var(--high);
+  box-shadow: inset 0 0 0 1px rgba(168, 58, 47, 0.12);
+}
+
+.chip.med {
+  background: var(--med-bg);
+  color: var(--med);
+  box-shadow: inset 0 0 0 1px rgba(150, 105, 29, 0.14);
+}
+
+/* 风险色的图标块不参与"翻实心"：高危红翻成品牌绿，语义就反了。
+   这里把它按回自己的底色，只保留一点点放大 —— 仍有"被点到"的反馈。
+   （注意不能写 background: inherit，那会继承卡片的渐变底，图标块等于消失。） */
+.tile:hover .chip.high,
+.tile:hover .chip.med {
+  transform: translateY(-1px) scale(1.05);
+}
+
+.tile:hover .chip.high {
+  background: var(--high-bg);
+  color: var(--high);
+  box-shadow: inset 0 0 0 1px rgba(168, 58, 47, 0.12);
+}
+
+.tile:hover .chip.med {
+  background: var(--med-bg);
+  color: var(--med);
+  box-shadow: inset 0 0 0 1px rgba(150, 105, 29, 0.14);
+}
+
+/* ---------- 数字卡：整块染底色的小卡 ----------
+   风险/中性色调各给一支"底 + 数字色"，看板上一眼能分辨轻重。 */
+.stat-card {
+  position: relative;
+  overflow: hidden;
+  padding: 15px 17px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel-grad);
+  transition:
+    transform 0.22s var(--ease),
+    box-shadow 0.22s var(--ease),
+    border-color 0.22s var(--ease),
+    background-color 0.22s var(--ease);
+}
+
+/* 两个伪元素各司其职：::before 给聚光，::after 给顶部强调线。 */
+.stat-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    320px circle at var(--mx, 50%) var(--my, -12%),
+    rgba(44, 95, 82, 0.13) 0%,
+    rgba(44, 95, 82, 0) 68%
+  );
+  opacity: 0;
+  transition: opacity 0.28s var(--ease);
+  pointer-events: none;
+}
+
+.stat-card:hover::before {
+  opacity: 1;
+}
+
+/* 内容必须抬到聚光层之上，否则图标块和数字会被那层柔光压暗 */
+.stat-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* 顶部一条 2px 的渐变强调线，宽度只在悬停时铺满 */
+.stat-card::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--brand-grad);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.34s var(--ease-out);
+}
+
+.stat-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--brand-line);
+  box-shadow: var(--lift);
+}
+
+.stat-card:hover::after {
+  transform: scaleX(1);
+}
+
+.stat-card.high::after {
+  background: linear-gradient(90deg, #c1543f 0%, var(--high) 100%);
+}
+.stat-card.med::after {
+  background: linear-gradient(90deg, #b98a2e 0%, var(--med) 100%);
+}
+
+.stat-card.tinted {
+  background: linear-gradient(180deg, #ffffff 0%, var(--brand-soft) 100%);
+}
+.stat-card.high.tinted {
+  background: linear-gradient(180deg, #ffffff 0%, var(--high-bg) 100%);
+}
+.stat-card.med.tinted {
+  background: linear-gradient(180deg, #ffffff 0%, var(--med-bg) 100%);
+}
+
+/* ---------- 滚动揭示（v-reveal） ----------
+   元素滚进视口时才淡入上浮，由 IntersectionObserver 加上 .is-in。
+   位移压在 16px：入场是「浮现」，不是「飞入」——
+   距离一大就变成特效表演，反而掉价。
+   只播一次，来回滚动不重播。 */
+.reveal {
+  opacity: 0;
+  transform: translate3d(0, 16px, 0);
+  transition:
+    opacity 0.62s var(--ease-out) var(--rv-delay, 0ms),
+    transform 0.74s var(--ease-out) var(--rv-delay, 0ms);
+}
+
+.reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+
+/* 逐字入场：标题被拆成一个个 span，各自带延迟浮上来。
+   只在 hero 这种"整页第一眼"的位置用 —— 到处都是就成杂耍了。 */
+.word {
+  display: inline-block;
+  opacity: 0;
+  transform: translate3d(0, 0.5em, 0);
+  animation: word-in 0.72s var(--ease-out) both;
+  animation-delay: calc(var(--w, 0) * 52ms);
+}
+
+@keyframes word-in {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------- 入场：淡入 + 上浮 ----------
+   卡片按顺序依次出现（配合 --i 设置延迟），比整页一起蹦出来更有节奏。 */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rise {
+  animation: rise 0.42s var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 55ms);
+}
+
+/* ---------- 缓慢漂移：给背景光斑用 ---------- */
+@keyframes drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(3%, -4%, 0) scale(1.08);
+  }
+}
+
+/* ---------- 骨架屏微光（加载中用） ---------- */
+@keyframes shimmer {
+  from {
+    background-position: -160% 0;
+  }
+  to {
+    background-position: 260% 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--panel-2) 25%,
+    #f0f1f3 37%,
+    var(--panel-2) 63%
+  );
+  background-size: 260% 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: var(--radius);
+}
+
+/* ---------- 无障碍：系统开了「减弱动态效果」就全部关掉 ----------
+   前庭功能障碍的用户会因为位移动画产生眩晕，这不是可选项。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .tile:hover,
+  .stat-card:hover {
+    transform: none;
+  }
+
+  /* 揭示动画必须直接落到终态。少了这一条，opacity: 0 会把内容永久藏起来 ——
+     这是"关掉动效"最常见的翻车点。 */
+  .reveal,
+  .word {
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }

@@ -190,7 +190,59 @@ SSE 流式咨询，请求体同上。`Content-Type: text/event-stream`，事件�
 
 ---
 
-## 七、咨询报告 `/api/report`
+## 七、心理科普 `/api/knowledge`
+
+语料存放在 Python 侧（与 RAG 检索共用同一份 `psych_faq.json`），Java 只做代理与过滤 ——
+好处是前端只需要认 Java 一个入口，不必直连 8000 端口。
+
+### GET /api/knowledge
+
+| 参数 | 说明 |
+|---|---|
+| `category` | 分类名；传「全部」或留空表示不过滤 |
+| `q` | 关键词，匹配标题 / 正文 / 出处；留空表示不过滤 |
+
+响应 `data`：`KnowledgeItem[]`，每项含 `id`、`category`、`title`、`content`、`source`。
+
+### GET /api/knowledge/categories
+
+返回 `[{name, count}]`，按条数倒序。
+
+> 后端带 5 分钟缓存：语料是静态内容，而科普页会反复切换分类与关键词，
+> 每次都穿透到 Python 没有意义。缓存还有个附加作用 ——
+> Python 临时不可用时，页面仍能凭旧缓存打开，而不是整页报错。
+
+---
+
+## 八、访问审计 `/api/audit`
+
+**仅管理员**。心理档案属于敏感个人信息，辅导员的每一次查阅都必须可追溯。
+
+### GET /api/audit/logs
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `current` / `size` | 1 / 20 | 分页 |
+| `operatorId` | — | 按操作人过滤 |
+| `targetType` / `targetId` | — | 按对象过滤，例如 `USER` + `1` |
+
+记录字段：`operatorId`、`operatorName`、`action`、`targetType`、`targetId`、`detail`、`ip`、`createTime`。
+
+写入时机（两处埋点）：
+
+| action | 触发位置 |
+|---|---|
+| `VIEW_PROFILE` | 辅导员调用 `GET /api/profile/{userId}` 查看他人档案（看自己的 `/me` 不记，那不算访问他人隐私） |
+| `HANDLE_ALERT` | 辅导员调用 `POST /api/risk/alerts/{id}/handle` 处置工单 |
+
+> 审计写入失败**不会阻断业务**，只打 error 日志。审计是旁路，
+> 让它把「合规加强」变成「系统不可用」并不划算。
+> 若将来合规要求审计即准入，应显式改成「写不进日志就拒绝访问」——
+> 那是策略变更，需要显式决策。
+
+---
+
+## 九、咨询报告 `/api/report`
 
 ### POST /api/report/{conversationId}
 
@@ -204,13 +256,13 @@ SSE 流式咨询，请求体同上。`Content-Type: text/event-stream`，事件�
 
 ---
 
-## 八、健康检查 `/api/health`
+## 十、健康检查 `/api/health`
 
 Java 主服务健康状态，`data.pythonAi` 反映 Python 服务是否在线。Python 服务不可用时仍返回 200，仅该字段为 `OFFLINE`。
 
 ---
 
-## 九、Python AI 服务 `:8000`
+## 十一、Python AI 服务 `:8000`
 
 仅由 Java 主服务调用，不直接对前端暴露。
 
@@ -222,7 +274,9 @@ Java 主服务健康状态，`data.pythonAi` 反映 Python 服务是否在线。
 | POST | `/api/agent/report` | 会话总结成报告 |
 | GET | `/api/agent/graph/mermaid` | 导出流程图源码 |
 | POST | `/api/agent/kb/rebuild` | 重建向量库（修改 FAQ 语料后调用） |
-| GET | `/api/agent/kb/search?q=&topK=` | 直接检索向量库，调参用 |
+| GET | `/api/agent/kb/search?q=&topK=` | 语义检索向量库，调参用（按相似度取 Top-K） |
+| GET | `/api/agent/kb/list?category=&q=` | 全量列举语料，供科普页浏览；支持分类与关键词过滤 |
+| GET | `/api/agent/kb/categories` | 分类及各自条数，供前端渲染筛选标签 |
 
 请求体格式（`/api/agent/chat` 与 `/stream`）：
 

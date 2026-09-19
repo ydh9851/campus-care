@@ -80,6 +80,11 @@ async function request(path, { method = 'GET', body, auth = true } = {}) {
   if (payload && payload.code !== 200) {
     throw new ApiError(payload.message || '请求失败', payload.code)
   }
+  // 后端返回 code 200 但 data 为 null 时，给调用方一个可识别的异常，
+  // 避免在 auth.js 里直接读 null.token 爆出英文堆栈。
+  if (payload && payload.code === 200 && payload.data === null) {
+    throw new ApiError('服务端返回了空数据，请稍后重试', 200)
+  }
   return payload ? payload.data : null
 }
 
@@ -139,6 +144,20 @@ export const profileApi = {
 /* ---------------- 数据看板（仅辅导员/管理员） ---------------- */
 export const dashboardApi = {
   get: (days = 14, topLimit = 8) => request(`/dashboard?days=${days}&topLimit=${topLimit}`),
+}
+
+/* ---------------- 心理科普 ---------------- */
+export const knowledgeApi = {
+  /** 条目列表，category 与 q 都为空时返回全部 */
+  list: (category = '', q = '') => {
+    const qs = new URLSearchParams()
+    if (category) qs.set('category', category)
+    if (q) qs.set('q', q)
+    const query = qs.toString()
+    return request(`/knowledge${query ? `?${query}` : ''}`)
+  },
+  /** 分类与条数，用于渲染筛选标签 */
+  categories: () => request('/knowledge/categories'),
 }
 
 /* ================================================================

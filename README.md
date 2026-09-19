@@ -1,5 +1,7 @@
 # CampusCare · 校园心理多 Agent 智能咨询平台
 
+[![CI](https://github.com/ydh9851/campus-care/actions/workflows/ci.yml/badge.svg)](https://github.com/ydh9851/campus-care/actions/workflows/ci.yml)
+
 面向高校心理健康教育中心的一体化平台。学生用自然语言倾诉，系统自动完成**意图识别 → 知识库检索 → 风险研判 → 生成回复**，出现高危表达时自动生成辅导员工单并附上危机干预资源；辅导员侧提供工单工作台、学生心理档案与全局数据看板。
 
 支持两种交互模式：一次性返回与 SSE 流式输出（逐 token 渲染，并展示每个 Agent 节点的真实耗时）。
@@ -10,17 +12,25 @@
 
 **学生端**
 
-- 注册 / 登录（Spring Security + JWT + Redis 白名单，支持登出立即失效、单点登录）
+- 首页工作台：按时段问候、状态一句话、四个快捷入口、最近动态、每日心理小贴士与危机资源
+- 注册 / 登录（Spring Security + JWT + Redis 白名单，支持登出立即失效、单点登录；登录页含 Canvas 图形验证码与滑块拼图人机校验）
 - 多轮咨询会话，历史上下文自动携带
 - 流式回复：回复逐字渲染，顶部展示意图识别、知识检索、风险研判的实时过程
 - 心理测评：PHQ-9 抑郁症筛查、GAD-7 广泛性焦虑量表，含单题高危规则
+- 心理科普：105 条语料按 11 个分类浏览与关键词搜索，与 RAG 检索共用同一份数据
 - 我的心理档案：咨询 / 测评 / 工单 / 报告聚合视图与情绪趋势
 
 **辅导员端**
 
+- 首页工作台：待处理 / 高危 / 涉及学生概览、系统自动结论、重点学生一键进档案
 - 风险工单工作台：按风险等级、处理状态筛选分页，查看原文与 AI 处置建议，填写处置备注
 - 数据看板：风险分布、工单趋势、24 小时时段分布、来源构成、处置效率、重点学生排行
 - 学生心理档案：一键查看某学生全部记录与事件时间线
+
+**合规**
+
+- 访问审计：辅导员每次查阅他人心理档案、处置工单都会留痕（操作人 / 动作 / 对象 / IP），
+  日志仅管理员可查 —— 心理数据属于敏感个人信息，必须能回答「谁在什么时候看过这个学生」
 
 **AI 服务**
 
@@ -69,20 +79,94 @@ Java 侧只做事务型业务与权限控制，所有 LLM / RAG / Agent 编排�
 
 ## 快速开始
 
+### 方式一：本地运行（推荐，无需 Docker）
+
+适合本机已装好 JDK / Maven / Node / Python / MySQL / Redis 的情况，也方便打断点调试。
+
+#### 环境要求
+| 依赖 | 版本 | 说明 |
+|---|---|---|
+| JDK | 17 | 不要用 21+（Lombok 1.18.32 不支持高版本 JDK） |
+| Maven | 3.8+ | 构建 / 运行 Java |
+| Node.js | 18+（CI 用 20） | 前端 |
+| Python | 3.11+ | AI 服务，建议 3.11 / 3.12 |
+| MySQL | 8.0 | 数据库，需 `utf8mb4` |
+| Redis | 5.0+ | **登录强依赖**：JWT 会话存 Redis，没起动登录直接失败 |
+
+> 不想在本机装 MySQL / Redis？可以只拿 Docker 起这两个中间件（见方式二下方「仅用 Docker 跑中间件」）。
+
+#### 1. 克隆
 ```bash
-# 1. 配置 DeepSeek API Key（不配也能跑，AI 会走 mock 话术）
-cp .env.example campus-care-python/.env
-# 编辑填入 DEEPSEEK_API_KEY
-
-# 2. 初始化数据库 + 导入演示数据
-mysql -uroot -p < sql/init.sql
-mysql -uroot -p campus_care < sql/demo_data.sql
-
-# 3. 用 docker-compose 一键启动 MySQL + Redis + 双服务
-docker-compose up -d
+git clone https://github.com/ydh9851/campus-care.git campus-care
+cd campus-care
 ```
 
-不使用 Docker 的本地启动方式、常见报错处理见 **[docs/SETUP.md](docs/SETUP.md)**。
+#### 2. 数据库（MySQL）
+建库并执行建表脚本（`init.sql` 内含 `DROP/CREATE campus_care`）：
+```bash
+mysql -uroot -p < sql/init.sql
+```
+导入演示数据（49 名学生、180+ 工单、90 天跨度，用于看板 / 档案页；可选）：
+```bash
+mysql -uroot -p campus_care < sql/demo_data.sql
+```
+> 若你的 MySQL 口令不是项目默认值 `123456`，二选一：① 启动 Java 前设环境变量 `MYSQL_PASSWORD=你的口令`；② 改 `campus-care-java/src/main/resources/application.yml` 的 `password`。
+
+#### 3. Redis
+- macOS：`brew install redis && brew services start redis`
+- Linux：`sudo apt install redis-server && sudo systemctl start redis`
+- Windows：装 [Memurai](https://www.memurai.com/)（Redis 的 Windows 发行版），或在 WSL 里 `sudo apt install redis-server`
+启动后 `redis-cli ping` 应返回 `PONG`。
+
+#### 4. Python AI 服务
+```bash
+cd campus-care-python
+python -m venv .venv
+source .venv/bin/activate        # Windows：.venv\Scripts\activate
+pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/   # 国内可加镜像
+cp .env.example .env             # 可选：填入 DEEPSEEK_API_KEY，不填则整条链路走 mock
+uvicorn main:app --reload --port 8000
+```
+> 检索默认用 `bge` 中文语义向量：首次会联网下载 `BAAI/bge-small-zh-v1.5` 并安装 torch（约 2GB，CPU 可跑但稍慢）。若无网络 / 不想装重依赖，在 `.env` 里设 `EMBEDDING_PROVIDER=local_hash` 退化为零依赖字面匹配（检索质量下降）。未配 Key 时 `llmMode=mock`，回复为内置话术，链路仍可跑通。
+
+#### 5. Java 主服务
+```bash
+cd campus-care-java
+mvn spring-boot:run             # 或 mvn clean package -DskipTests && java -jar target/campus-care-java-1.0.0.jar
+```
+默认 8080；可用环境变量 `MYSQL_HOST/MYSQL_PORT/MYSQL_PASSWORD`、`REDIS_HOST/REDIS_PORT`、`PYTHON_AI_URL`、`JWT_SECRET` 覆盖默认值。
+
+#### 6. 前端
+```bash
+cd campus-care-ui
+npm install
+npm run dev                     # 开发服务器 http://localhost:5173
+```
+> 生产构建：`npm run build`，产物在 `dist/`，需用 Nginx 等反代把 `/api` 转到 Java:8080（开发服务器的代理仅在 `npm run dev` 生效）。
+
+**启动顺序必须是 Redis → Python → Java → 前端**：Java 启动即连 MySQL/Redis，Python 启动即建向量库，顺序反了会连不上。
+
+### 方式二：Docker Compose 一键
+适合不想在本机装一堆中间件的场景，一条命令起 MySQL + Redis + Python + Java：
+```bash
+cp .env.example .env           # docker-compose 读取根目录 .env
+# 编辑 .env，填入 DEEPSEEK_API_KEY（可空，走 mock）
+docker-compose up -d
+```
+`sql/init.sql` 由容器首次启动自动执行；演示数据需手动导入（容器名 `campuscare-mysql`，密码以 `.env` 的 `MYSQL_ROOT_PASSWORD` 为准，默认 `root`）：
+```bash
+docker exec -i campuscare-mysql mysql -uroot -proot campus_care < sql/demo_data.sql
+```
+> 国内拉取 Docker Hub 镜像慢 / 被墙时，给 Docker Desktop 配一个镜像加速器（如 `https://docker.m.daocloud.io`）再 `up`。
+
+**仅用 Docker 跑中间件**（本地跑 Java/Python/前端时）：
+```bash
+docker run -d --name cc-mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=123456 -e MYSQL_DATABASE=campus_care mysql:8.0 --character-set-server=utf8mb4 --collation-server=utf8mb4_general_ci
+docker run -d --name cc-redis -p 6379:6379 redis:7-alpine
+```
+然后按方式一的第 4/5/6 步在本地起 Python / Java / 前端即可（端口与本地默认一致）。
+
+本地依赖的完整步骤与常见报错处理见 **[docs/SETUP.md](docs/SETUP.md)**。
 
 启动后：
 
@@ -99,7 +183,7 @@ docker-compose up -d
 | `student01` | STUDENT | 学生端全部功能 |
 | `teacher01` | COUNSELOR | 工单工作台 + 数据看板 + 学生档案 |
 
-`sql/demo_data.sql` 含 48 名学生、176 个会话、1000+ 条消息、180+ 张风险工单，覆盖 90 天时间跨度，用于演示看板与档案页。数据由 `tools/gen_demo_data.py` 生成，可重新生成：
+`sql/demo_data.sql` 含 49 名学生、176 个会话、1000+ 条消息、180+ 张风险工单，覆盖 90 天时间跨度，用于演示看板与档案页。数据由 `tools/gen_demo_data.py` 生成（固定随机种子，条数可复现），可重新生成：
 
 ```bash
 python tools/gen_demo_data.py
@@ -113,7 +197,7 @@ mysql -uroot -p campus_care < sql/demo_data.sql
 ```
 campus-care/
 ├── campus-care-java/          Java 主服务
-│   └── src/main/java/com/campuscare/
+│   ├── src/main/java/com/campuscare/
 │       ├── common/            统一返回、全局异常、风险等级枚举
 │       ├── config/            Web / Jackson / MyBatis-Plus / OpenAPI 配置
 │       ├── security/          JWT 工具、认证过滤器、Security 配置
@@ -122,6 +206,7 @@ campus-care/
 │       ├── client/            调用 Python AI 服务
 │       ├── service/           业务层
 │       └── controller/        REST 接口
+│   └── src/test/java/         单元测试：测评计分与档位边界
 ├── campus-care-python/        Python AI 服务
 │   ├── app/agents/            意图识别 / RAG 检索 / 风险研判 / 生成回复
 │   ├── app/graph/             LangGraph 状态机
@@ -130,9 +215,10 @@ campus-care/
 │   ├── data/                  心理 FAQ 语料
 │   └── scripts/               离线冒烟测试
 ├── campus-care-ui/            Vue3 前端
-│   └── src/views/             登录 / 会话 / 测评 / 档案 / 工单 / 看板
+│   └── src/views/             登录 / 首页 / 会话 / 测评 / 科普 / 档案 / 工单 / 看板
+├── .github/workflows/         CI：Java 测试 + 前端构建 + 语料校验
 ├── sql/
-│   ├── init.sql               建表脚本
+│   ├── init.sql               建表脚本（7 张表）
 │   └── demo_data.sql          演示数据
 ├── tools/
 │   ├── gen_demo_data.py       演示数据生成器
@@ -141,15 +227,14 @@ campus-care/
 ├── docs/
 │   ├── API.md                 接口清单
 │   └── SETUP.md               启动、依赖与排错
-├── docker-compose.yml
-└── AI_CONTEXT.md              开发上下文（供 AI 助手读取，可删除）
+└── docker-compose.yml
 ```
 
 ---
 
 ## 数据模型
 
-6 张表，均不含外键约束（一致性由应用层保证，避免高并发写入时的锁开销）。
+7 张表，均不含外键约束（一致性由应用层保证，避免高并发写入时的锁开销）。
 
 | 表 | 说明 |
 |---|---|
@@ -159,6 +244,7 @@ campus-care/
 | `risk_alert` | 风险工单（统一工单池），`source` = CHAT / ASSESSMENT |
 | `consult_report` | 咨询报告，含情绪评分与干预建议 |
 | `assessment_record` | 量表测评记录，答题明细以逗号分隔存一行 |
+| `access_log` | 敏感数据访问审计，只记查阅与处置动作，不记普通业务写入 |
 
 ---
 
@@ -204,6 +290,8 @@ Java 主服务概览：
 | 心理档案 | `/api/profile/**` | `/me` 本人，`/{userId}` 仅辅导员 |
 | 风险工单 | `/api/risk/alerts/**` | 仅辅导员 / 管理员 |
 | 数据看板 | `/api/dashboard` | 仅辅导员 / 管理员 |
+| 心理科普 | `/api/knowledge/**` | 登录用户 |
+| 访问审计 | `/api/audit/**` | **仅管理员** |
 | 咨询报告 | `/api/report/**` | 登录用户 |
 
 Python AI 服务（仅由 Java 调用）：`/api/health`、`/api/agent/chat`、`/api/agent/chat/stream`、`/api/agent/report`、`/api/agent/kb/search`、`/api/agent/kb/rebuild`、`/api/agent/graph/mermaid`。
@@ -218,7 +306,16 @@ Python AI 服务（仅由 Java 调用）：`/api/health`、`/api/agent/chat`、`
 python tools/verify_chain.py
 ```
 
-覆盖内容：两端健康检查 → 登录（JWT + Redis）→ 知识查询（断言走 RAG 且命中 FAQ）→ 高危表达（断言 HIGH 并落工单）→ 会话消息落库条数与角色顺序 → 咨询报告生成 → 辅导员工单列表与学生越权 403。修改任一端口后建议执行一次。
+覆盖 **13 组共 73 项断言**：两端健康检查 → 登录（JWT + Redis）→ 知识查询（断言走 RAG 且命中 FAQ）→ 高危表达（断言 HIGH 并落工单）→ 会话消息落库条数与角色顺序 → 咨询报告生成 → 辅导员工单列表与学生越权 403 → 心理科普（分类过滤 / 关键词过滤）→ 心理测评（作答与计分联动）→ 心理档案（三处取最高、越权 403）→ 数据看板（趋势补零、时段 24 点、结论非空）→ 访问审计（查阅留痕、日志仅管理员可见）。修改任一端口后建议执行一次。
+
+Java 侧另有 **23 项单元测试**，覆盖测评计分的档位边界（4/5、9/10、14/15、19/20 四组切档）与 PHQ-9 第 9 题单题高危规则 —— 这是全项目唯一「算错会害人」的逻辑：
+
+```bash
+cd campus-care-java
+mvn test
+```
+
+CI（`.github/workflows/ci.yml`）会跑 `mvn test`、前端构建与语料结构校验；上表的端到端脚本需要完整四件套，因此留在本地执行。
 
 ```bash
 # 前端未就绪时，可用 Mock AI 服务替换 Python 侧，独立验证 Java 链路
@@ -233,3 +330,19 @@ python tools/mock_ai_server.py
 - 看板统计为实时 `GROUP BY`，未做预聚合或缓存，数据量再大需引入离线汇总表
 - 关键词库为人工维护，覆盖面和误报率随语料变化，缺少持续评估机制
 - 量表仅内置 PHQ-9 与 GAD-7，且未做答题时长、作答一致性等有效性校验
+- 前端未做 Element Plus 按需引入，`element` chunk 约 940 kB（gzip 300 kB）；
+  ECharts 已通过路由懒加载只在数据看板下载，但首屏 vendor 仍有压缩空间
+- 访问审计只落库、不做保留期管理，长期运行需要归档或按时间分区
+- 前端无单元测试（vitest）；Java 与 Python 的覆盖也集中在核心逻辑，不是全量覆盖
+- RAG 检索质量依赖 `EMBEDDING_PROVIDER`：默认 `bge` 语义向量（需安装 torch ≈2GB 并首次联网下载 `BAAI/bge-small-zh-v1.5`），可设 `local_hash` 退化为零依赖字面匹配（仅字面特征、无语义）；均未配置 DeepSeek Key 时整条链路走 mock。相似度阈值与召回率尚缺离线评估指标
+
+## 待改进 / 路线图
+
+按优先级，适合作为简历里「我在持续打磨」的抓手：
+
+1. **测试覆盖**：补全 Python（Agent 编排、风险研判）与前端（组件 / 接口）自动化单测；现有端到端 `tools/verify_chain.py`（73 断言）接入 CI。
+2. **RAG 质量**：补充检索相似度 / 召回率评估脚本，量化 `bge` 与 `local_hash` 的差异；扩展 FAQ 语料并补全 `source` 出处字段。
+3. **数据合规**：心理数据明文存储，需补充保留期与删除策略；访问审计日志应支持按时间归档 / 分区。
+4. **生产就绪**：反向代理 + HTTPS、JWT 续期与限流、SSE 断线续传、AI 调用熔断（Python 挂掉时避免用户输入丢失）。
+5. **移动端适配**：学生主要用手机访问，当前前端未做移动端布局优化。
+6. **可观测性**：接入 actuator / metrics / traceId，便于排查与演示。

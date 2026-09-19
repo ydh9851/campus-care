@@ -8,6 +8,7 @@ import App from './App.vue'
 import router from './router'
 import { setUnauthorizedHandler } from './api'
 import { forceLogout, restoreSession } from './auth'
+import { registerDirectives } from './directives'
 
 // api.js 遇到 401 时回调这里：清登录态 + 跳登录页，避免每个请求都写一遍
 setUnauthorizedHandler(() => {
@@ -19,8 +20,7 @@ setUnauthorizedHandler(() => {
 
 // 先把登录态恢复完再挂载，避免首屏闪一下登录页（路由守卫不能覆盖所有时序）
 restoreSession().finally(() => {
-  createApp(App)
-    .use(router)
-    .use(ElementPlus, { locale: zhCn })
-    .mount('#app')
+  const app = createApp(App)
+  registerDirectives(app)
+  app.use(router).use(ElementPlus, { locale: zhCn }).mount('#app')
 })

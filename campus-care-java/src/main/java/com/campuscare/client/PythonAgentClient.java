@@ -3,6 +3,8 @@ package com.campuscare.client;
 import com.campuscare.common.BizException;
 import com.campuscare.dto.AgentChatRequest;
 import com.campuscare.dto.AgentChatResponse;
+import com.campuscare.dto.KnowledgeItem;
+import com.campuscare.dto.KnowledgePage;
 import com.campuscare.dto.PyEnvelope;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -148,6 +150,35 @@ public class PythonAgentClient {
         } catch (RestClientException e) {
             log.error("调用 Python 报告接口失败: {}", e.getMessage());
             throw new BizException("AI 服务不可用，无法生成报告");
+        }
+    }
+
+    /**
+     * 拉取知识库全部条目（心理科普用）。
+     *
+     * 刻意不带任何查询参数：过滤由 KnowledgeService 在本地做，
+     * 百来条纯文本一次取回即可，没必要按关键词反复往返。
+     */
+    public List<KnowledgeItem> kbItems() {
+        String url = baseUrl + "/api/agent/kb/list";
+        try {
+            ResponseEntity<PyEnvelope<KnowledgePage>> response = restTemplate.exchange(
+                    url,
+                    HttpMethod.GET,
+                    null,
+                    new ParameterizedTypeReference<>() {
+                    });
+
+            PyEnvelope<KnowledgePage> body = response.getBody();
+            if (body == null || !body.isSuccess() || body.getData() == null) {
+                throw new BizException("知识库返回异常：" + (body == null ? "响应为空" : body.getMessage()));
+            }
+            List<KnowledgeItem> items = body.getData().getItems();
+            return items == null ? List.of() : items;
+
+        } catch (RestClientException e) {
+            log.error("拉取知识库失败: {}", e.getMessage());
+            throw new BizException("AI 服务不可用，无法加载科普内容");
         }
     }
 

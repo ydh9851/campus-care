@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  java:
+    name: Java 构建与单元测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      # 只跑单元测试（测评计分的档位边界与 PHQ-9 单题高危规则）。
+      # 这批测试不依赖 MySQL / Redis / Python，所以不会因为外部服务波动而红。
+      - name: mvn test
+        working-directory: campus-care-java
+        run: mvn -B test
+
+  python:
+    name: Python 语法检查与语料校验
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # 刻意不安装依赖：AI 服务的依赖太重（torch / chromadb 加起来上 GB），
+      # 在 CI 里装一遍要十几分钟，性价比极低。
+      # 这里只保证「语法能过」和「语料结构正确」，
+      # 真正的端到端联调靠本地 tools/verify_chain.py（需要完整四件套）。
+      - name: 编译检查
+        run: python -m compileall -q campus-care-python/app campus-care-python/scripts
+
+      - name: 校验知识库语料
+        run: python campus-care-python/scripts/check_faq.py
+
+  frontend:
+    name: 前端构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: campus-care-ui/package-lock.json
+
+      - name: 安装依赖
+        working-directory: campus-care-ui
+        run: npm ci
+
+      - name: 构建
+        working-directory: campus-care-ui
+        run: npm run build

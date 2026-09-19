@@ -42,6 +42,7 @@ dist/
 Thumbs.db
 .vscode/
 *.log
+*.err
 logs/
 
 # ---- 本机专用（内含本地绝对路径/口令，不提交到仓库）----

@@ -9,9 +9,23 @@ const routes = [
     meta: { bare: true }, // 登录页不显示顶部导航
   },
   {
+    // 登录后的落地页。
+    // 之前根路径直接 redirect 到 /chat，整个站点就只剩一个对话界面，
+    // 学生看不到测评、档案、科普这些本该并列的入口。
+    path: '/home',
+    name: 'home',
+    component: () => import('./views/HomeView.vue'),
+  },
+  {
     path: '/chat',
     name: 'chat',
     component: () => import('./views/ChatView.vue'),
+  },
+  {
+    // 科普内容与 RAG 检索共用同一份 FAQ 语料（Python 侧 psych_faq.json）
+    path: '/knowledge',
+    name: 'knowledge',
+    component: () => import('./views/KnowledgeView.vue'),
   },
   {
     path: '/assessment',
@@ -37,8 +51,8 @@ const routes = [
     component: () => import('./views/AlertView.vue'),
     meta: { counselorOnly: true },
   },
-  { path: '/', redirect: '/chat' },
-  { path: '/:pathMatch(.*)*', redirect: '/chat' },
+  { path: '/', redirect: '/home' },
+  { path: '/:pathMatch(.*)*', redirect: '/home' },
 ]
 
 const router = createRouter({
@@ -70,7 +84,7 @@ router.beforeEach(async (to) => {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
   if (to.meta.counselorOnly && !isCounselor.value) {
-    return { name: 'chat' }
+    return { name: 'home' }
   }
   return true
 })
