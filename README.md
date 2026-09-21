@@ -2,9 +2,16 @@
 
 [![CI](https://github.com/ydh9851/campus-care/actions/workflows/ci.yml/badge.svg)](https://github.com/ydh9851/campus-care/actions/workflows/ci.yml)
 
-面向高校心理健康教育中心的一体化平台。学生用自然语言倾诉，系统自动完成**意图识别 → 知识库检索 → 风险研判 → 生成回复**，出现高危表达时自动生成辅导员工单并附上危机干预资源；辅导员侧提供工单工作台、学生心理档案与全局数据看板。
+## 项目简介
 
-支持两种交互模式：一次性返回与 SSE 流式输出（逐 token 渲染，并展示每个 Agent 节点的真实耗时）。
+面向高校心理健康教育中心的一体化平台。学生用自然语言倾诉，系统自动完成 **意图识别 → 知识库检索 → 风险研判 → 生成回复**；出现高危表达时自动生成辅导员工单并附上危机干预资源，辅导员侧提供工单工作台、学生心理档案与全局数据看板。
+
+- **技术栈**：Vue 3 + Element Plus（前端）· Spring Boot 3.2 + MySQL + Redis（Java 主服务）· FastAPI + LangGraph + ChromaDB + DeepSeek（Python AI 服务）
+- **两种交互模式**：一次性返回与 SSE 流式输出（逐 token 渲染，并展示每个 Agent 节点的真实耗时）
+- **没 Key 也能跑**：未配置 DeepSeek API Key 时整条链路自动降级为 mock，本地调试与 CI 都不消耗额度
+
+> **v2 目标形态见 [docs/TARGET.md](docs/TARGET.md)**（AegisCare 多 Agent 平台的目标效果与验收基线）。
+> 本 README 描述的是当前仓库**现状**；涉及「要做什么、做到什么程度」以 TARGET.md 为准。
 
 ---
 
