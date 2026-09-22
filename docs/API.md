@@ -305,5 +305,24 @@ Java 主服务健康状态，`data.pythonAi` 反映 Python 服务是否在线。
 SSE 的 `done` 事件包含同样的字段。
 
 Java 侧（`AgentChatResponse` / `ChatResponse`）已同步这几个字段并透传给前端：
-会话页会在 AI 回复下方展示免责声明，高危时在预警提示条中提示「已附上人工求助入口」。
-`traceId` 由 Java 生成后经 `AgentChatRequest` 透传给 Python，两端日志用同一个 id 串联。
+会话页会在 AI 回复下方展示免责声明；`needHandoff` 为 `true` 时，
+预警提示条里会给出可直接拨打的危机干预热线（`tel:` 链接）。
+
+### traceId 的传递路径
+
+```
+请求头 X-Trace-Id（可选，上游传入）
+   ↓  TraceIdFilter：读取或生成 → 绑定 MDC → 回写同名响应头
+Java 全部日志（logback pattern 里的 %X{traceId}，无需业务代码配合）
+   ↓  请求体 traceId + 请求头 X-Trace-Id 双通道
+Python 日志
+   ↓  响应体 traceId
+前端（排障时对照用）
+```
+
+- **由 Java 在请求入口生成**：一次咨询的前半段（鉴权、会话解析、加载历史）都在 Java，
+  等 Python 生成的话这几段日志挂不上 id —— 链路恰好断在最需要排查的位置。
+- **同时走请求体和请求头**是有意为之：请求头是跨服务的标准通道（Python 中间件优先读它），
+  请求体那份保证即使中间有代理剥掉自定义头，链路信息也不会丢。
+- **SSE 需要显式处理**：异步线程不会继承父线程的 MDC，`ChatService.consultStream`
+  会先取出 traceId、进线程后重新绑定，并在任务结束时清理（线程池的线程是复用的）。

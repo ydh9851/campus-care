@@ -51,8 +51,8 @@
 - RAG 检索：BM25 字面 + 向量语义双路召回 → RRF 融合 → 轻量重排，回复附带出处与相关度
 - 风险研判：关键词规则优先（含否定词、转述他人降级处理），LLM 负责生成处置建议
 - Prompt 外置在 `prompts/`，按内容哈希生成版本号并随响应返回，能回答「这次用的是哪一版文案」
-- traceId 贯穿 Java ↔ Python ↔ 前端：一次咨询跨两个服务、四个节点，两端日志可按同一个 id 对齐
-- 安全护栏：回复带免责声明（会话页展示），高危会话强制附加真实求助资源与人工入口（不交给模型生成）
+- traceId 三端贯通：Java 入口生成 → MDC 注入全部日志（含 SSE 异步线程）→ 请求头 + 请求体双通道传给 Python → 响应头 `X-Trace-Id` 回写给前端
+- 安全护栏：回复带免责声明（会话页展示），高危会话强制附加真实求助资源，前端给出**可直拨**的热线入口（`tel:` 链接，不交给模型生成）
 - LLM 可靠性：指数退避重试 + 总时间预算 + 多模型回退链
 - 未配置 API Key 时自动降级为 mock，整条链路仍可跑通
 
@@ -215,15 +215,17 @@ mysql -uroot -p campus_care < sql/demo_data.sql
 campus-care/
 ├── campus-care-java/          Java 主服务
 │   ├── src/main/java/com/campuscare/
-│       ├── common/            统一返回、全局异常、风险等级枚举
+│       ├── common/            统一返回、全局异常、风险等级枚举、traceId 持有者
 │       ├── config/            Web / Jackson / MyBatis-Plus / OpenAPI 配置
-│       ├── security/          JWT 工具、认证过滤器、Security 配置
+│       ├── security/          JWT 工具、认证过滤器、traceId 过滤器、Security 配置
 │       ├── entity/ mapper/    MyBatis-Plus 实体与 Mapper
 │       ├── dto/               出入参与 Java↔Python 协议
 │       ├── client/            调用 Python AI 服务
 │       ├── service/           业务层
 │       └── controller/        REST 接口
-│   └── src/test/java/         单元测试：测评计分与档位边界
+│   ├── src/main/resources/
+│       └── logback-spring.xml 日志格式（pattern 里带 %X{traceId}，全链路自动带 id）
+│   └── src/test/java/         单元测试：测评计分 / 咨询编排 / traceId 过滤器
 ├── campus-care-python/        Python AI 服务
 │   ├── app/agents/            意图识别 / RAG 检索 / 风险研判 / 生成回复
 │   ├── app/graph/             LangGraph 状态机
@@ -328,9 +330,13 @@ Python AI 服务（仅由 Java 调用）：`/api/health`、`/api/agent/chat`、`
 python tools/verify_chain.py
 ```
 
-覆盖 **13 组共 73 项断言**：两端健康检查 → 登录（JWT + Redis）→ 知识查询（断言走 RAG 且命中 FAQ）→ 高危表达（断言 HIGH 并落工单）→ 会话消息落库条数与角色顺序 → 咨询报告生成 → 辅导员工单列表与学生越权 403 → 心理科普（分类过滤 / 关键词过滤）→ 心理测评（作答与计分联动）→ 心理档案（三处取最高、越权 403）→ 数据看板（趋势补零、时段 24 点、结论非空）→ 访问审计（查阅留痕、日志仅管理员可见）。修改任一端口后建议执行一次。
+覆盖 **14 组共 77 项断言**：两端健康检查 → 登录（JWT + Redis）→ 知识查询（断言走 RAG 且命中 FAQ）→ 高危表达（断言 HIGH 并落工单）→ 会话消息落库条数与角色顺序 → 咨询报告生成 → 辅导员工单列表与学生越权 403 → 心理科普（分类过滤 / 关键词过滤）→ 心理测评（作答与计分联动）→ 心理档案（三处取最高、越权 403）→ 数据看板（趋势补零、时段 24 点、结论非空）→ 访问审计（查阅留痕、日志仅管理员可见）→ traceId（响应头回写、上游 id 复用、不同请求不重复）。修改任一端口后建议执行一次。
 
-Java 侧另有 **23 项单元测试**，覆盖测评计分的档位边界（4/5、9/10、14/15、19/20 四组切档）与 PHQ-9 第 9 题单题高危规则 —— 这是全项目唯一「算错会害人」的逻辑：
+Java 侧另有 **40 项单元测试**，分三块：
+
+- **测评计分（23 项）** —— 档位边界（4/5、9/10、14/15、19/20 四组切档）与 PHQ-9 第 9 题单题高危规则，这是全项目唯一「算错会害人」的逻辑
+- **咨询编排（10 项）** —— AI 字段透传（`needHandoff` 只透传不重算）、traceId 三条链路（含 SSE 异步线程重新绑定）、AI 失败回滚新建会话、越权 403 不白烧 AI 调用
+- **traceId 过滤器（7 项）** —— 生成 / 复用上游 id、MDC 清理（含业务抛异常的路径）
 
 ```bash
 cd campus-care-java
@@ -384,10 +390,10 @@ python tools/mock_ai_server.py
 
 按优先级，适合作为简历里「我在持续打磨」的抓手：
 
-1. ~~**测试覆盖**~~（部分完成）：Python 侧已补 39 项单测并接入 CI；剩余前端（组件 / 接口）单测，以及把 `tools/verify_chain.py`（73 断言）接入 CI。
+1. ~~**测试覆盖**~~（部分完成）：Python 侧 39 项、Java 侧 40 项（其中 AI 调用链 17 项为本次新增），均已接入 CI；剩余前端（组件 / 接口）单测，以及把 `tools/verify_chain.py`（73 断言）接入 CI。
 2. ~~**RAG 质量**~~（部分完成）：已实现 BM25 + 向量混合检索与离线评估脚本（Recall@1/3/5、MRR），实测优于任一单路；剩余扩大标注集与 FAQ 语料规模。
 3. **风险研判**：已建立 34 条标注集与评估脚本（P/R/F1 + 危机召回率）并接入 CI；下一步引入脱敏真实语料扩充标注规模，持续跟踪误报率。
 4. **数据合规**：心理数据明文存储，需补充保留期与删除策略；访问审计日志应支持按时间归档 / 分区。
 5. **生产就绪**：反向代理 + HTTPS、JWT 续期与限流、SSE 断线续传、AI 调用熔断（Python 挂掉时避免用户输入丢失）。
 6. **移动端适配**：学生主要用手机访问，当前前端未做移动端布局优化。
-7. **可观测性**：Python 侧已贯穿 traceId 与 prompt 版本号；剩余接入 actuator / metrics，以及 Java 侧 traceId 透传。
+7. ~~**可观测性**~~（部分完成）：traceId 已在 Java / Python / 前端三端贯通（Java 侧经 MDC 注入全部日志并由 `X-Trace-Id` 响应头回写），prompt 版本号随响应返回；剩余接入 actuator / metrics 与日志采集。

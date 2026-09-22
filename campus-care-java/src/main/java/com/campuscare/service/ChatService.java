@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.campuscare.client.PythonAgentClient;
 import com.campuscare.common.BizException;
 import com.campuscare.common.RiskLevel;
+import com.campuscare.common.TraceIdHolder;
 import com.campuscare.dto.AgentChatRequest;
 import com.campuscare.dto.AgentChatResponse;
 import com.campuscare.dto.ChatRequest;
@@ -27,7 +28,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -72,14 +72,13 @@ public class ChatService {
 
         // ---------- 2. 调用 Python 多 Agent 服务（失败时数据库保持干净） ----------
         AgentChatRequest agentRequest = buildAgentRequest(userId, conversation, request.getContent());
-        String traceId = agentRequest.getTraceId();
 
         AgentChatResponse agentResponse;
         try {
             agentResponse = pythonAgentClient.chat(agentRequest);
         } catch (RuntimeException e) {
-            log.error("咨询失败: traceId={}, conversationId={}, 原因={}",
-                    traceId, conversation.getId(), e.getMessage());
+            // 不再手写 traceId 占位符：MDC 已由 TraceIdFilter 绑定，logback pattern 会统一带上
+            log.error("咨询失败: conversationId={}, 原因={}", conversation.getId(), e.getMessage());
             rollbackIfCreated(ref);
             throw e;
         }
@@ -108,14 +107,14 @@ public class ChatService {
         response.setTokens(agentResponse.getTokens());
         // 可观测性与合规字段：口径全部由 Python 侧决定，Java 只透传不重算 ——
         // 「是否算高危」「要不要给免责声明」只能有一套判断，两端各判一次迟早会打架。
-        response.setTraceId(traceId);
+        response.setTraceId(agentRequest.getTraceId());
         response.setRetrievalMode(agentResponse.getRetrievalMode());
         response.setPromptVersion(agentResponse.getPromptVersion());
         response.setDisclaimer(agentResponse.getDisclaimer());
         response.setNeedHandoff(agentResponse.getNeedHandoff());
 
-        log.info("咨询完成: traceId={}, conversationId={}, risk={}, alertId={}",
-                traceId, conversation.getId(), riskLevel.name(), alertId);
+        log.info("咨询完成: conversationId={}, risk={}, alertId={}",
+                conversation.getId(), riskLevel.name(), alertId);
         return response;
     }
 
@@ -127,7 +126,20 @@ public class ChatService {
      */
     public SseEmitter consultStream(Long userId, ChatRequest request, ExecutorService executor) {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
-        executor.submit(() -> runStream(userId, request, emitter));
+
+        // MDC 底层是 ThreadLocal，异步线程继承不到父线程的绑定 ——
+        // 所以先在请求线程里取出 traceId，进了线程池再重新绑定，
+        // 否则整条流式链路的日志都会丢掉 traceId（恰恰是这半段最需要排查）。
+        String traceId = TraceIdHolder.currentOrCreate();
+        executor.submit(() -> {
+            TraceIdHolder.set(traceId);
+            try {
+                runStream(userId, request, emitter);
+            } finally {
+                // 线程池的线程会复用，用完必须清，避免污染下一个任务
+                TraceIdHolder.clear();
+            }
+        });
         return emitter;
     }
 
@@ -196,6 +208,7 @@ public class ChatService {
             emitter.complete();
 
         } catch (Exception e) {
+            // MDC 已在本线程绑定（见 consultStream），这条日志会自动带上 traceId
             log.error("流式咨询失败: {}", e.getMessage());
             // 和一次性接口一样：AI 没成功，首次咨询新建的空会话要回滚掉
             if (ref != null) {
@@ -246,19 +259,10 @@ public class ChatService {
         agentRequest.setConversationId(conversation.getId());
         agentRequest.setMessage(content);
         agentRequest.setHistory(history);
-        agentRequest.setTraceId(newTraceId());
+        // traceId 由 TraceIdFilter 在请求入口生成并绑定到 MDC，这里取出来显式放进请求体：
+        // MDC 出不了进程，跨服务必须显式传递（请求头 X-Trace-Id 由 PythonAgentClient 补上）
+        agentRequest.setTraceId(TraceIdHolder.currentOrCreate());
         return agentRequest;
-    }
-
-    /**
-     * 生成链路追踪 id。
-     *
-     * 口径与 Python 侧一致：UUID 去横线后取前 16 位。
-     * 由 Java 生成而不是 Python —— 一次咨询的前半段（鉴权、会话解析、加载历史）都在 Java，
-     * 等 Python 生成的话这几段日志就挂不上 id，链路断在最需要排查的地方。
-     */
-    private String newTraceId() {
-        return UUID.randomUUID().toString().replace("-", "").substring(0, 16);
     }
 
     /** 首次咨询新建的会话在 AI 失败时回滚掉；续聊场景不能删，历史消息还要保留 */

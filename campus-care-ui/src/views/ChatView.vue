@@ -393,17 +393,30 @@ function scoreTone(score) {
         </div>
       </div>
 
-      <!-- 高危提示条 -->
+      <!-- 高危提示条：工单已建；needHandoff 时给出可直接拨打的求助入口 -->
       <div
         v-if="alertNotice"
         class="notice"
         :class="alertNotice.level === 'HIGH' ? 'notice-high' : 'notice-med'"
       >
-        <span>
-          已生成风险预警工单 <b class="num">#{{ alertNotice.id }}</b>，辅导员会尽快跟进<template
-            v-if="alertNotice.needHandoff"
-          >；回复中已附上人工求助入口，随时可用</template>
-        </span>
+        <div class="notice-main">
+          <span>
+            已生成风险预警工单 <b class="num">#{{ alertNotice.id }}</b>，辅导员会尽快跟进。
+          </span>
+          <!-- 「转人工」的真入口。此前这里只有一句「已附上人工求助入口」的文案，
+               但页面上没有任何可点的东西 —— 学生想求助其实无路可走。
+               做成 tel: 链接而不是一串号码：危机场景里让一个已经很难受的人
+               自己抄下电话再找拨号盘，等于没有入口。 -->
+          <div v-if="alertNotice.needHandoff" class="handoff">
+            <span class="handoff-tip">现在就想找人聊聊，可以直接打：</span>
+            <a class="handoff-link" href="tel:4001619995">
+              全国心理援助热线 <b>400-161-9995</b>
+            </a>
+            <a class="handoff-link" href="tel:01082951332">
+              北京心理危机干预中心 <b>010-82951332</b>
+            </a>
+          </div>
+        </div>
         <button type="button" @click="alertNotice = null">知道了</button>
       </div>
 
@@ -956,13 +969,51 @@ function scoreTone(score) {
 /* ---------- 提示条 ---------- */
 .notice {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   margin: 0 24px;
   padding: 9px 14px;
   border-radius: var(--radius);
   font-size: 13px;
+}
+
+.notice-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 「转人工」入口：needHandoff 时才出现。
+   用 currentColor 描边而不是固定色，好让高危/中危两种提示条各自沿用自己那套配色。 */
+.handoff {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+.handoff-tip {
+  opacity: 0.8;
+}
+
+.handoff-link {
+  color: inherit;
+  text-decoration: none;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 2px 10px;
+  opacity: 0.9;
+}
+
+.handoff-link:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.handoff-link b {
+  font-weight: 600;
 }
 
 .notice-high {

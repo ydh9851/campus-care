@@ -13,6 +13,7 @@ import logging
 from app.agents.rag_agent import build_context
 from app.agents.risk_agent import CRISIS_RESOURCES
 from app.agents.state import AgentState
+from app.config import get_settings
 from app.llm import get_llm
 from app.prompts import load_json_prompt, load_prompt
 from app.safety import apply_safety
@@ -27,12 +28,26 @@ MOCK_REPLIES = {
 }
 
 
+def _trim_history(history: list) -> list:
+    """只保留最近 N 条历史。
+
+    这个上限以前是「配了但没人读」的死配置：Java 侧默认传 10 条，
+    看起来像是生效了，其实 Python 这边拿到多少用多少 ——
+    换个客户端接入（或前端直连）就会失控，而配置项还静静躺在那里。
+    现在在这里真正裁剪：历史太长既费 token，又容易让模型被旧话题带偏。
+    """
+    limit = int(get_settings().history_limit or 0)
+    if limit <= 0:
+        return []
+    return history[-limit:]
+
+
 def build_messages(state: AgentState) -> list:
     """组装送给 LLM 的 messages。流式与非流式共用，避免 system prompt 各写一份。"""
     message = state.get("message") or ""
     intent = state.get("intent") or "PSYCH_EMOTION"
     docs = state.get("retrieved") or []
-    history = state.get("history") or []
+    history = _trim_history(state.get("history") or [])
 
     # ---- 1. 组装 system prompt ----
     style_map = load_json_prompt("reply_style")

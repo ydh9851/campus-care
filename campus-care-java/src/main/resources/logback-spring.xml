@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  日志格式配置。
+
+  关键点是 pattern 里的 %X{traceId}：它从 MDC 读取当前线程的 traceId
+  （由 TraceIdFilter 绑定），业务代码不需要写任何占位符。
+
+  %X{traceId:-} 里的 ":-" 表示取不到时输出空串，
+  否则 logback 会打出 "traceId_IS_UNDEFINED" 这种噪音（比如应用启动阶段的日志）。
+
+  日志级别仍在 application.yml 的 logging.level 里配置，这里只管格式。
+-->
+<configuration>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level [%thread] [%X{traceId:-}] %logger{36} - %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+</configuration>

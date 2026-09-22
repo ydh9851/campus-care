@@ -1,6 +1,7 @@
 package com.campuscare.client;
 
 import com.campuscare.common.BizException;
+import com.campuscare.common.TraceIdHolder;
 import com.campuscare.dto.AgentChatRequest;
 import com.campuscare.dto.AgentChatResponse;
 import com.campuscare.dto.KnowledgeItem;
@@ -42,6 +43,28 @@ public class PythonAgentClient {
     private String baseUrl;
 
     /**
+     * 构造 JSON 请求头，顺带带上链路追踪 id。
+     *
+     * traceId 在请求体里已经传了一份，这里再走一次请求头是有意为之：
+     * 请求头是跨服务的标准通道（Python 侧中间件优先读它），
+     * 而体里那一份保证即使中间有代理剥掉了自定义头，链路信息也不会丢。
+     */
+    private HttpHeaders jsonHeaders() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        applyTraceId(headers);
+        return headers;
+    }
+
+    /** 把当前线程的 traceId 写进请求头；没有绑定就不带 */
+    private void applyTraceId(HttpHeaders headers) {
+        String traceId = TraceIdHolder.current();
+        if (traceId != null && !traceId.isBlank()) {
+            headers.set(TraceIdHolder.HEADER, traceId);
+        }
+    }
+
+    /**
      * 发起一轮多 Agent 咨询。
      *
      * @param request 用户 id、会话 id、本次消息、历史上下文
@@ -49,9 +72,7 @@ public class PythonAgentClient {
      */
     public AgentChatResponse chat(AgentChatRequest request) {
         String url = baseUrl + "/api/agent/chat";
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<AgentChatRequest> entity = new HttpEntity<>(request, headers);
+        HttpEntity<AgentChatRequest> entity = new HttpEntity<>(request, jsonHeaders());
 
         long start = System.currentTimeMillis();
         try {
@@ -94,6 +115,7 @@ public class PythonAgentClient {
         String url = baseUrl + "/api/agent/chat/stream";
 
         restTemplate.execute(url, HttpMethod.POST, req -> {
+            applyTraceId(req.getHeaders());
             req.getHeaders().setContentType(MediaType.APPLICATION_JSON);
             req.getHeaders().setAccept(List.of(MediaType.TEXT_EVENT_STREAM));
             StreamUtils.copy(objectMapper.writeValueAsBytes(request), req.getBody());
@@ -131,9 +153,7 @@ public class PythonAgentClient {
      */
     public java.util.Map<String, Object> report(AgentChatRequest request) {
         String url = baseUrl + "/api/agent/report";
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<AgentChatRequest> entity = new HttpEntity<>(request, headers);
+        HttpEntity<AgentChatRequest> entity = new HttpEntity<>(request, jsonHeaders());
 
         try {
             ResponseEntity<PyEnvelope<java.util.Map<String, Object>>> response = restTemplate.exchange(
@@ -165,7 +185,7 @@ public class PythonAgentClient {
             ResponseEntity<PyEnvelope<KnowledgePage>> response = restTemplate.exchange(
                     url,
                     HttpMethod.GET,
-                    null,
+                    new HttpEntity<>(jsonHeaders()),
                     new ParameterizedTypeReference<>() {
                     });
 

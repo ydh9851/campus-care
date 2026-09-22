@@ -13,6 +13,7 @@
     ⑩ 心理档案：聚合视图 + 三处取最高的证据 + 越权 403
     ⑪ 数据看板：趋势补零、时段 24 点、结论非空 + 越权 403
     ⑫ 访问审计：查阅他人档案必须留痕，且审计日志仅管理员可见
+    ⑬ traceId：响应头回写、上游 id 复用、不同请求不重复
 
 前置条件：Redis、MySQL、Java :8080、Python :8000 均已启动。
 
@@ -89,6 +90,24 @@ def unwrap(body):
     if isinstance(body, dict) and body.get("code") == 200:
         return body.get("data")
     return None
+
+
+def fetch_trace_header(path: str = "/api/health", trace_id: str | None = None):
+    """请求 Java 并取回响应头里的 X-Trace-Id，返回 (状态码, traceId)。
+
+    单独写一个函数而不是复用 call()：call() 的契约是「返回状态码 + body」，
+    为了读一个响应头把它改成三元组，二十多处调用点全得跟着改 —— 不划算。
+    """
+    req = urllib.request.Request(JAVA + path)
+    if trace_id:
+        req.add_header("X-Trace-Id", trace_id)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.status, resp.headers.get("X-Trace-Id")
+    except urllib.error.HTTPError as e:
+        return e.code, e.headers.get("X-Trace-Id")
+    except Exception:  # 连不上 / 超时
+        return -1, None
 
 
 # ------------------------------------------------------------------
@@ -440,6 +459,32 @@ def step13_audit() -> None:
     check("teacher01 访问审计日志被拒 403（辅导员也不能看）", status == 403, f"HTTP {status}")
 
 
+def step14_trace_id() -> None:
+    """traceId 链路：响应头必须回写，且上游带了的要复用。
+
+    这三条断言看着琐碎，但每一个都对应一种「静默失效」：
+    没回写响应头 → 前端报障时给不出 id；没复用上游 id → 跨系统链路断成两截；
+    写死成常量 → 所有请求的日志混在一起，等于没有追踪。
+    """
+    section(14, "traceId：响应头回写与上游复用")
+
+    status, trace_id = fetch_trace_header()
+    check("Java 响应头回写 X-Trace-Id", status == 200 and bool(trace_id), f"{trace_id}")
+    check("traceId 为 16 位（与 Python 侧口径一致）",
+          bool(trace_id) and len(trace_id) == 16,
+          f"{trace_id}")
+
+    _, second = fetch_trace_header()
+    check("不同请求的 traceId 不重复（不是写死的常量）",
+          bool(trace_id) and second != trace_id,
+          f"{trace_id} → {second}")
+
+    # 上游（网关 / 前端）自带的 id 必须原样复用，否则跨系统就是两条断开的链路
+    upstream = "0123456789abcdef"
+    _, echoed = fetch_trace_header(trace_id=upstream)
+    check("复用上游传入的 X-Trace-Id", echoed == upstream, f"{echoed}")
+
+
 def main() -> int:
     print("=" * 72)
     print("CampusCare  Java ↔ Python 全链路联调验证")
@@ -474,6 +519,7 @@ def main() -> int:
     step11_profile(token)
     step12_dashboard()
     step13_audit()
+    step14_trace_id()
 
     print("\n" + "=" * 72)
     print(f"验证结束：通过 {_passed} 项，失败 {_failed} 项")
