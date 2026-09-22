@@ -10,6 +10,7 @@ import logging
 from app.agents.risk_agent import detect_keywords
 from app.agents.state import AgentState
 from app.llm import get_llm
+from app.prompts import load_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -19,16 +20,6 @@ INTENT_RISK = "RISK_ALERT"          # 高危预警
 INTENT_CHITCHAT = "CHITCHAT"        # 闲聊
 
 VALID_INTENTS = {INTENT_PSYCH, INTENT_KNOWLEDGE, INTENT_RISK, INTENT_CHITCHAT}
-
-INTENT_SYSTEM_PROMPT = """你是校园心理咨询平台的意图识别模块。请判断学生这句话属于哪一类，只输出一个标签，不要解释。
-
-分类标准：
-- PSYCH_EMOTION：倾诉自己的情绪或处境（如"我最近很难过""压力好大"）
-- KNOWLEDGE_QUERY：询问心理知识或方法（如"焦虑怎么办""怎么改善失眠"）
-- RISK_ALERT：出现自杀、自残、轻生等危及生命的表达
-- CHITCHAT：打招呼、闲聊、与本平台无关的问题
-
-只允许输出以下四个词之一：PSYCH_EMOTION、KNOWLEDGE_QUERY、RISK_ALERT、CHITCHAT"""
 
 
 def intent_node(state: AgentState) -> dict:
@@ -45,7 +36,7 @@ def intent_node(state: AgentState) -> dict:
     llm = get_llm()
     text, _ = llm.chat(
         messages=[
-            {"role": "system", "content": INTENT_SYSTEM_PROMPT},
+            {"role": "system", "content": load_prompt("intent")},
             {"role": "user", "content": message},
         ],
         temperature=0.0,   # 分类任务要确定性，温度拉到最低

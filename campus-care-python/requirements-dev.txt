@@ -1,0 +1,5 @@
+# 本地开发/测试依赖
+# CI 里不会装 requirements.txt（torch + chromadb 上 GB），而是单独装一组轻量依赖，
+# 跑 Mock 模式下的单测与评估脚本。详见 .github/workflows/ci.yml。
+-r requirements.txt
+pytest>=8.0.0

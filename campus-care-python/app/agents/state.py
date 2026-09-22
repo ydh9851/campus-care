@@ -6,13 +6,27 @@
 from typing import List, TypedDict
 
 
-class RetrievedDoc(TypedDict):
-    """RAG 检索命中的一条 FAQ"""
+class RetrievedDoc(TypedDict, total=False):
+    """RAG 检索命中的一条 FAQ。
+
+    除内容字段外，还带检索过程信息：
+      score       最终相关度（0~1），用于展示与阈值过滤
+      id          语料 id，混合检索靠它对齐「向量路」和「BM25 路」
+      retrieval   该条来自哪一路：vector / bm25 / both
+      fusion      RRF 融合分（很小，仅调试用）
+      coverage    查询词在正文里的覆盖率（轻量重排的依据）
+      rerankScore 轻量重排后的排序分
+    """
+    id: str
     title: str
     content: str
     category: str
     score: float
     source: str
+    retrieval: str
+    fusion: float
+    coverage: float
+    rerankScore: float
 
 
 class AgentState(TypedDict, total=False):

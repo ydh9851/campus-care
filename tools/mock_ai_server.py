@@ -110,14 +110,26 @@ class MockAiHandler(BaseHTTPRequestHandler):
                  message[:24]), flush=True)
 
         if self.path.startswith("/api/agent/chat"):
-            self._send_json(envelope(self._chat(message)))
+            # traceId 由 Java 生成后透传，这里原样回显，行为与真实 Python 服务一致
+            self._send_json(envelope(self._chat(message, body.get("traceId"))))
         elif self.path.startswith("/api/agent/report"):
             self._send_json(envelope(self._report()))
         else:
             self._send_json({"code": 404, "message": "not found"})
 
     # ---------- 模拟两个 Agent 的输出 ----------
-    def _chat(self, message):
+    # 字段必须与真实 Python 服务（app/schemas.py: AgentChatData）保持一致，
+    # 否则「用 mock 联调通过、换真服务挂掉」这种最难查的问题就会出现。
+    def _common(self, trace_id):
+        return {
+            "traceId": trace_id or "",
+            "retrievalMode": "hybrid",
+            "promptVersion": {"intent": "mock0001", "reply_base": "mock0002", "risk_suggestion": "mock0003"},
+            "disclaimer": "本回复由 AI 生成，仅供情绪支持与心理健康科普，"
+                          "不构成医学诊断或治疗建议；如有需要请咨询专业心理工作者。",
+        }
+
+    def _chat(self, message, trace_id=None):
         high_hits = [w for w in HIGH_WORDS if w in message]
         medium_hits = [w for w in MEDIUM_WORDS if w in message]
 
@@ -130,8 +142,10 @@ class MockAiHandler(BaseHTTPRequestHandler):
                 "riskLevel": "HIGH",
                 "keywords": high_hits,
                 "aiSuggestion": "建议 24 小时内联系该学生本人，启动高危干预流程并通知院系辅导员。",
-                "ragSources": ["FAQ-011 危机干预与求助渠道"],
+                "ragSources": ["FAQ-011 危机干预与求助渠道（相关度 0.82）"],
                 "tokens": 128,
+                "needHandoff": True,
+                **self._common(trace_id),
             }
 
         if medium_hits:
@@ -142,8 +156,10 @@ class MockAiHandler(BaseHTTPRequestHandler):
                 "riskLevel": "MEDIUM",
                 "keywords": medium_hits,
                 "aiSuggestion": "建议辅导员在 3 天内关注该学生的状态变化。",
-                "ragSources": ["FAQ-003 睡眠与情绪的关系", "FAQ-007 压力管理"],
+                "ragSources": ["FAQ-003 睡眠与情绪的关系（相关度 0.71）", "FAQ-007 压力管理（相关度 0.66）"],
                 "tokens": 156,
+                "needHandoff": False,
+                **self._common(trace_id),
             }
 
         return {
@@ -155,6 +171,8 @@ class MockAiHandler(BaseHTTPRequestHandler):
             "aiSuggestion": None,
             "ragSources": [],
             "tokens": 62,
+            "needHandoff": False,
+            **self._common(trace_id),
         }
 
     def _report(self):

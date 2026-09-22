@@ -45,6 +45,45 @@ jobs:
       - name: 校验知识库语料
         run: python campus-care-python/scripts/check_faq.py
 
+  python-test:
+    name: Python 单测与质量评估
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: campus-care-python/requirements.txt
+
+      # 只装「跑 Mock 模式所需」的轻量依赖 —— 不装 torch / chromadb / sentence-transformers。
+      # 单测与评估全部走 local_hash + BM25 降级路径，正好也验证了降级可用。
+      - name: 安装轻量依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install \
+            "fastapi>=0.110.0,<1.0.0" "uvicorn>=0.27.0" "pydantic>=2.6.0,<3.0.0" \
+            "pydantic-settings>=2.2.0" "python-dotenv>=1.0.1" "httpx>=0.27.0" \
+            "langgraph>=0.2.0,<0.3.0" "langchain-core>=0.3.0,<0.4.0" \
+            "numpy>=1.26,<2.0" "pytest>=8.0.0"
+
+      - name: 单元测试
+        working-directory: campus-care-python
+        run: python -m pytest -q
+
+      # 检索质量回归：卡住 Recall@3 与 MRR 底线，防止改动把检索改回去。
+      # 阈值按 local_hash + hybrid 的实测值留余量设定（实测 R@3 62.5%、MRR 0.536），
+      # 线上用 bge 向量时指标会更高，这里取降级路径作为下限。
+      - name: 检索质量评估（混合检索基线）
+        working-directory: campus-care-python
+        run: python scripts/eval_retrieval.py --mode hybrid --provider local_hash --min-recall3 0.55 --min-mrr 0.45
+
+      # 风险研判回归：危机召回率是心理平台最不能让步的指标
+      - name: 风险研判评估
+        working-directory: campus-care-python
+        run: python scripts/eval_risk.py --min-macro-f1 0.90 --min-high-recall 0.95
+
   frontend:
     name: 前端构建
     runs-on: ubuntu-latest

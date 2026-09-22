@@ -27,6 +27,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -70,11 +71,15 @@ public class ChatService {
         Conversation conversation = ref.conversation();
 
         // ---------- 2. 调用 Python 多 Agent 服务（失败时数据库保持干净） ----------
+        AgentChatRequest agentRequest = buildAgentRequest(userId, conversation, request.getContent());
+        String traceId = agentRequest.getTraceId();
+
         AgentChatResponse agentResponse;
         try {
-            agentResponse = pythonAgentClient.chat(
-                    buildAgentRequest(userId, conversation, request.getContent()));
+            agentResponse = pythonAgentClient.chat(agentRequest);
         } catch (RuntimeException e) {
+            log.error("咨询失败: traceId={}, conversationId={}, 原因={}",
+                    traceId, conversation.getId(), e.getMessage());
             rollbackIfCreated(ref);
             throw e;
         }
@@ -101,6 +106,16 @@ public class ChatService {
         response.setAlertId(alertId);
         response.setRagSources(agentResponse.getRagSources());
         response.setTokens(agentResponse.getTokens());
+        // 可观测性与合规字段：口径全部由 Python 侧决定，Java 只透传不重算 ——
+        // 「是否算高危」「要不要给免责声明」只能有一套判断，两端各判一次迟早会打架。
+        response.setTraceId(traceId);
+        response.setRetrievalMode(agentResponse.getRetrievalMode());
+        response.setPromptVersion(agentResponse.getPromptVersion());
+        response.setDisclaimer(agentResponse.getDisclaimer());
+        response.setNeedHandoff(agentResponse.getNeedHandoff());
+
+        log.info("咨询完成: traceId={}, conversationId={}, risk={}, alertId={}",
+                traceId, conversation.getId(), riskLevel.name(), alertId);
         return response;
     }
 
@@ -231,7 +246,19 @@ public class ChatService {
         agentRequest.setConversationId(conversation.getId());
         agentRequest.setMessage(content);
         agentRequest.setHistory(history);
+        agentRequest.setTraceId(newTraceId());
         return agentRequest;
+    }
+
+    /**
+     * 生成链路追踪 id。
+     *
+     * 口径与 Python 侧一致：UUID 去横线后取前 16 位。
+     * 由 Java 生成而不是 Python —— 一次咨询的前半段（鉴权、会话解析、加载历史）都在 Java，
+     * 等 Python 生成的话这几段日志就挂不上 id，链路断在最需要排查的地方。
+     */
+    private String newTraceId() {
+        return UUID.randomUUID().toString().replace("-", "").substring(0, 16);
     }
 
     /** 首次咨询新建的会话在 AI 失败时回滚掉；续聊场景不能删，历史消息还要保留 */

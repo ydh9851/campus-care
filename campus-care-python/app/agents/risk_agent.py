@@ -15,6 +15,7 @@ from typing import Dict, List
 
 from app.agents.state import AgentState
 from app.llm import get_llm
+from app.prompts import fill, load_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,9 @@ MEDIUM_RISK_WORDS: List[str] = [
     "失眠", "睡不着", "整夜睡不着", "想哭", "一直哭", "压力好大", "压力太大", "活着好累",
     "好累", "很累", "自我否定", "一无是处", "废物", "不想说话", "社交恐惧", "被孤立", "被霸凌",
     "恐慌", "心慌", "胸闷", "吃不下", "暴食", "厌学", "想逃", "恨自己",
+    # 人际关系受挫的常见说法。只写「被孤立」会漏掉「被室友孤立」「被宿舍孤立」这类
+    # 中间插字的情况（子串匹配要求连续），所以补上更短的「孤立」「排挤」。
+    "孤立", "被排挤", "排挤", "边缘化", "融不进去",
 ]
 
 # 出现这些词会让"高危词"失效（例如"我没有想死"）
@@ -72,14 +76,21 @@ def detect_keywords(text: str) -> Dict[str, object]:
     }
 
 
-def risk_node(state: AgentState) -> dict:
-    """LangGraph 节点：风险等级判定 + 生成处置建议"""
-    message = state.get("message") or ""
+def classify_risk(message: str, intent: str | None = None) -> dict:
+    """纯规则的风险分级（不调用 LLM）。
+
+    把分级逻辑从节点里抽出来，是为了让离线评估（scripts/eval_risk.py）能直接跑
+    线上同一套规则 —— 否则评测的是一份「平行实现」，测得再好也不能代表线上行为。
+
+    :param intent: 上游意图识别的结果。RISK_ALERT 会把等级提到至少 MEDIUM
+                   （意图侧已经识别为危机，风险侧不能比它更乐观）。
+    :return: {"level": ..., "keywords": [...], "detail": detect_keywords 原始结果}
+    """
     result = detect_keywords(message)
 
     if result["is_high"]:
         level = "HIGH"
-    elif result["is_medium"] or state.get("intent") == "RISK_ALERT":
+    elif result["is_medium"] or intent == "RISK_ALERT":
         level = "MEDIUM"
     else:
         level = "LOW"
@@ -88,7 +99,15 @@ def risk_node(state: AgentState) -> dict:
     if result["third_party"] and level == "MEDIUM":
         level = "LOW"
 
-    keywords = list(result["keywords"])
+    return {"level": level, "keywords": list(result["keywords"]), "detail": result}
+
+
+def risk_node(state: AgentState) -> dict:
+    """LangGraph 节点：风险等级判定 + 生成处置建议"""
+    message = state.get("message") or ""
+    verdict = classify_risk(message, intent=state.get("intent"))
+    level = verdict["level"]
+    keywords = verdict["keywords"]
 
     suggestion = ""
     if level in ("HIGH", "MEDIUM"):
@@ -112,11 +131,7 @@ def _build_suggestion(message: str, level: str, keywords: List[str]) -> str:
     )
 
     llm = get_llm()
-    prompt = (
-        "你是高校心理危机干预的辅助系统。请针对下面这条学生发言，"
-        "给辅导员写 2-3 条可执行的处置建议，语气专业、简短，不要复述原话，不要给医学诊断。\n\n"
-        f"学生发言：{message}"
-    )
+    prompt = fill(load_prompt("risk_suggestion"), message=message)
     text, _ = llm.chat(
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3,

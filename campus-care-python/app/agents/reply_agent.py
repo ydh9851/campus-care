@@ -1,7 +1,10 @@
 """生成节点：链路的收口，把前面各 Agent 的结论合成一句人话。
 
 按意图决定说话方式，有 RAG 结果就要求"只依据资料回答"，
-高风险回复强制附上真实求助资源。
+高风险回复强制附上真实求助资源 + 人工入口。
+
+prompt 全部外置在 prompts/ 下（reply_base.txt / reply_style.json），
+这里的 MOCK_REPLIES 不是 prompt 而是「没配 Key 时的兜底话术」，所以留在代码里。
 """
 from __future__ import annotations
 
@@ -11,25 +14,10 @@ from app.agents.rag_agent import build_context
 from app.agents.risk_agent import CRISIS_RESOURCES
 from app.agents.state import AgentState
 from app.llm import get_llm
+from app.prompts import load_json_prompt, load_prompt
+from app.safety import apply_safety
 
 logger = logging.getLogger(__name__)
-
-BASE_SYSTEM_PROMPT = """你是 CampusCare 校园心理支持助手，面向在校大学生提供情绪支持和心理健康科普。
-
-必须遵守的规则：
-1. 你不是医生，不做任何疾病诊断，不推荐处方药。
-2. 语气温和、真诚、平等，不评判、不说教、不喊口号。
-3. 先接住情绪，再给建议；建议要具体可执行，不超过 3 条。
-4. 如果提供了【参考资料】，只依据资料内容回答，不要编造资料里没有的说法。
-5. 回答用中文，控制在 200 字以内，除非对方明确要求展开。
-6. 涉及危机情况时，优先鼓励对方联系学校心理中心和身边可信任的人。"""
-
-INTENT_STYLE = {
-    "PSYCH_EMOTION": "对方在向你倾诉。请先共情、确认他的感受，再给出 1-2 条即时可做的小建议。",
-    "KNOWLEDGE_QUERY": "对方在问心理知识。请依据参考资料给出清晰、结构化的解释和做法。",
-    "RISK_ALERT": "对方可能正处于危机中。请用最温和而直接的方式表达关心，明确建议他立刻联系专业帮助，不要淡化风险、不要只讲道理。",
-    "CHITCHAT": "对方在闲聊。请简短、自然地回应，并顺势把话题引向他的状态和感受。",
-}
 
 MOCK_REPLIES = {
     "PSYCH_EMOTION": "听到你这么说，我能感觉到你这段时间确实挺不容易的。愿意多讲讲是什么让你最难受吗？如果现在很难受，可以先试着深呼吸几次，喝口温水，给自己十分钟什么都不做。",
@@ -47,7 +35,9 @@ def build_messages(state: AgentState) -> list:
     history = state.get("history") or []
 
     # ---- 1. 组装 system prompt ----
-    system_parts = [BASE_SYSTEM_PROMPT, INTENT_STYLE.get(intent, INTENT_STYLE["PSYCH_EMOTION"])]
+    style_map = load_json_prompt("reply_style")
+    style = style_map.get(intent) or style_map.get("PSYCH_EMOTION", "")
+    system_parts = [load_prompt("reply_base"), style]
 
     context = build_context(docs)
     if context:
@@ -67,19 +57,19 @@ def build_messages(state: AgentState) -> list:
 
 def finalize_reply(reply: str, risk_level: str) -> str:
     """
-    收尾：高危回复强制附上真实求助资源。
+    收尾：高危回复强制附上真实求助资源 + 人工入口。
     这段硬编码而不交给模型生成，因为它不能出错，模型可能遗漏或被诱导绕过。
     """
+    text = (reply or "").strip()
     if risk_level == "HIGH":
         logger.warning("高危会话生成回复，附带危机干预资源")
-        return (
-            f"{reply.strip()}\n\n"
+        text = (
+            f"{text}\n\n"
             "——\n"
             "以下资源请立刻使用，任何时候都有效：\n"
-            f"{CRISIS_RESOURCES}\n\n"
-            "学校心理中心的预约是免费的，也有辅导员随时可以联系。你不是一个人。"
+            f"{CRISIS_RESOURCES}"
         ).strip()
-    return reply.strip()
+    return apply_safety(text, risk_level)
 
 
 def generate_node(state: AgentState) -> dict:

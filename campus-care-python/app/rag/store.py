@@ -112,8 +112,14 @@ class FaqVectorStore:
         self._ready = True
         return self._collection.count()
 
-    def search(self, query: str, top_k: int | None = None) -> List[RetrievedDoc]:
-        """语义检索，返回 Top-K 结果（按相似度倒序）。"""
+    def search(self, query: str, top_k: int | None = None,
+               min_score: float | None = None) -> List[RetrievedDoc]:
+        """语义检索，返回 Top-K 结果（按相似度倒序）。
+
+        :param min_score: 临时覆盖默认阈值。混合检索调用时传 0.0 ——
+                          候选先尽量多召回，阈值过滤统一交给融合层做，
+                          否则向量路会先被自己的阈值砍掉一批候选，融合就失去意义了。
+        """
         if not self._ready:
             try:
                 self.build()
@@ -127,35 +133,38 @@ class FaqVectorStore:
                 # 查询侧标记 is_query：BGE 需要加指令前缀，文档侧不加
                 query_embeddings=self.embedder.encode([query], is_query=True),
                 n_results=k,
-                include=["documents", "metadatas", "distances"],
+                include=["documents", "metadatas", "distances", "ids"],
             )
         except Exception as e:
             logger.error("检索失败: %s", e)
             return []
 
+        ids = (result.get("ids") or [[]])[0]
         documents = (result.get("documents") or [[]])[0]
         metadatas = (result.get("metadatas") or [[]])[0]
         distances = (result.get("distances") or [[]])[0]
 
         # 阈值跟向量模型走：哈希向量 0.15，语义向量 0.35
-        min_score = self.settings.retrieval_min_score
-        if min_score is None:
-            min_score = self.embedder.min_relevant_score
+        threshold = self.settings.retrieval_min_score if min_score is None else min_score
+        if threshold is None:
+            threshold = self.embedder.min_relevant_score
 
         hits: List[RetrievedDoc] = []
-        for doc, meta, dist in zip(documents, metadatas, distances):
+        for doc_id, doc, meta, dist in zip(ids, documents, metadatas, distances):
             score = round(1.0 - float(dist), 4)
-            if score < min_score:
+            if score < threshold:
                 continue
             meta = meta or {}
             hits.append({
+                "id": str(doc_id),
                 "title": meta.get("title", ""),
                 "category": meta.get("category", "通用"),
                 "content": doc or "",
                 "score": score,
                 "source": meta.get("source", ""),
+                "retrieval": "vector",
             })
-        logger.info("RAG 检索 '%s' -> 命中 %d 条（阈值 %.2f）", query[:20], len(hits), min_score)
+        logger.info("RAG 检索 '%s' -> 命中 %d 条（阈值 %.2f）", query[:20], len(hits), threshold)
         return hits
 
     @property

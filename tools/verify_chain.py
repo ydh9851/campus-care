@@ -149,10 +149,17 @@ def step4_consult_rag(token: str) -> int | None:
     check("intent == KNOWLEDGE_QUERY（证明意图节点把分支导向了 RAG）",
           data.get("intent") == "KNOWLEDGE_QUERY", str(data.get("intent")))
     sources = data.get("ragSources") or []
-    check("ragSources 非空（RAG 真的从 ChromaDB 检索到了 FAQ）", bool(sources), f"{len(sources)} 条")
+    check("ragSources 非空（RAG 真的检索到了 FAQ）", bool(sources), f"{len(sources)} 条")
     for s in sources:
         print(f"           · {s}")
     check("reply 非空", bool(data.get("reply")), (data.get("reply") or "")[:40] + " ...")
+    # 混合检索上线后新增：这几个字段必须能一路透传到前端，
+    # 少一个接口不会报错，但前端会静默退化（不显示免责声明 / 拿不到 traceId）。
+    check("retrievalMode 合法（hybrid / vector）",
+          data.get("retrievalMode") in ("hybrid", "vector"), str(data.get("retrievalMode")))
+    check("traceId 非空（Java 生成、Python 回显，两端日志可按它对齐）",
+          bool(data.get("traceId")), str(data.get("traceId")))
+    check("disclaimer 非空（合规兜底）", bool(data.get("disclaimer")))
 
     # 【关键】配了 Key 之后必须盯住这一项：
     # llm.py 里 LLMClient.is_mock 只看"客户端建没建出来"，所以 Key 填错/余额不足时
@@ -185,6 +192,9 @@ def step5_consult_risk(token: str, conversation_id: int) -> int | None:
     check("riskLevel == HIGH", data.get("riskLevel") == "HIGH", str(data.get("riskLevel")))
     check("落库生成预警工单 alertId", bool(data.get("alertId")), f"alertId={data.get('alertId')}")
     check("高危回复自动附带危机干预热线", "400-161-9995" in (data.get("reply") or ""))
+    check("高危请求 needHandoff == true（前端据此展示人工入口）", data.get("needHandoff") is True)
+    check("高危回复附带人工求助引导", "希望和真人聊聊" in (data.get("reply") or ""))
+    check("traceId 非空", bool(data.get("traceId")), str(data.get("traceId")))
     print(f"         AI 回复: {(data.get('reply') or '')[:100]} ...")
     return data.get("alertId")
 

@@ -14,19 +14,30 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from app.agents.intent_agent import intent_node, route_by_intent
-from app.agents.rag_agent import rag_node
+from app.agents.rag_agent import rag_node, retrieve
 from app.agents.reply_agent import MOCK_REPLIES, build_messages, finalize_reply
 from app.agents.risk_agent import risk_node
 from app.agents.state import AgentState
+from app.config import get_settings
 from app.graph.builder import get_graph, mermaid
 from app.llm import get_llm
+from app.prompts import fill, load_prompt, prompt_versions
 from app.rag.loader import load_faq
 from app.rag.store import get_store
+from app.safety import DISCLAIMER, needs_handoff
 from app.schemas import AgentChatData, AgentChatRequest, Envelope, ReportData
+from app.trace import get_trace_id, set_trace_id
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["agent"])
+
+
+def _bind_trace(request: AgentChatRequest) -> str:
+    """确定本次请求的 trace id，优先级：body 指定 > header（中间件已设）> 新生成。"""
+    current = get_trace_id()
+    tid = request.traceId or (current if current and current != "-" else "")
+    return set_trace_id(tid)
 
 
 # ---------- 健康检查 ----------
@@ -35,11 +46,15 @@ def health():
     """供 Java 服务反向探测"""
     store = get_store()
     llm = get_llm()
+    settings = get_settings()
     return Envelope.ok({
         "service": "campus-care-python",
         "status": "UP",
         "llmMode": "mock" if llm.is_mock else "deepseek",
+        "models": llm.models,
+        "retrievalMode": settings.retrieval_mode,
         "vectorStore": {"ready": store.ready, "docCount": store.count()},
+        "promptVersions": prompt_versions(),
     })
 
 
@@ -47,6 +62,7 @@ def health():
 @router.post("/agent/chat")
 def agent_chat(request: AgentChatRequest):
     """执行 LangGraph：意图识别 → (RAG 检索) → 风险预警 → 生成回复"""
+    _bind_trace(request)
     history = [{"role": m.role, "content": m.content} for m in request.history]
 
     initial_state: AgentState = {
@@ -62,14 +78,21 @@ def agent_chat(request: AgentChatRequest):
         logger.exception("LangGraph 执行失败")
         return Envelope.fail(f"AI 链路执行失败: {type(e).__name__}: {e}")
 
+    settings = get_settings()
+    risk_level = result.get("risk_level") or "LOW"
     data = AgentChatData(
         reply=result.get("reply") or "",
         intent=result.get("intent") or "PSYCH_EMOTION",
-        riskLevel=result.get("risk_level") or "LOW",
+        riskLevel=risk_level,
         keywords=list(result.get("keywords") or []),
         aiSuggestion=result.get("ai_suggestion") or None,
         ragSources=list(result.get("rag_sources") or []),
         tokens=int(result.get("tokens") or 0),
+        traceId=get_trace_id(),
+        retrievalMode=settings.retrieval_mode,
+        promptVersion=prompt_versions(),
+        disclaimer=DISCLAIMER if settings.disclaimer_enabled else "",
+        needHandoff=needs_handoff(risk_level),
     )
     logger.info("本轮咨询完成: intent=%s, risk=%s, tokens=%s",
                 data.intent, data.riskLevel, data.tokens)
@@ -106,8 +129,12 @@ def agent_chat_stream(request: AgentChatRequest):
         "message": request.message,
         "history": history,
     }
+    trace_id = _bind_trace(request)
 
     def event_stream():
+        # 生成器在线程池里执行，contextvar 不会自动继承请求上下文，
+        # 所以这里重新写入 trace id，保证这段链路里的日志能被串起来。
+        set_trace_id(trace_id)
         started_all = time.perf_counter()
         stages: List[dict] = []
 
@@ -175,16 +202,23 @@ def agent_chat_stream(request: AgentChatRequest):
                 {"tokens": tokens},
             ))
 
+            settings = get_settings()
+            risk_level = state.get("risk_level") or "LOW"
             yield _sse(EVENT_DONE, {
                 "reply": full_reply,
                 "intent": intent,
-                "riskLevel": state.get("risk_level") or "LOW",
+                "riskLevel": risk_level,
                 "keywords": list(state.get("keywords") or []),
                 "aiSuggestion": state.get("ai_suggestion") or None,
                 "ragSources": list(state.get("rag_sources") or []),
                 "tokens": tokens,
                 "elapsedMs": int((time.perf_counter() - started_all) * 1000),
                 "stages": stages,
+                "traceId": get_trace_id(),
+                "retrievalMode": settings.retrieval_mode,
+                "promptVersion": prompt_versions(),
+                "disclaimer": DISCLAIMER if settings.disclaimer_enabled else "",
+                "needHandoff": needs_handoff(risk_level),
             })
 
         except Exception as e:
@@ -203,24 +237,11 @@ def agent_chat_stream(request: AgentChatRequest):
 
 
 # ---------- 咨询报告：整段会话总结 ----------
-REPORT_PROMPT = """你是高校心理中心的报告助手。请阅读下面这段学生与心理支持助手的对话，
-输出一份结构化报告。
-
-对话内容：
-{dialog}
-
-请严格按以下 JSON 格式输出，不要输出任何多余文字：
-{{
-  "summary": "80 字以内的对话摘要",
-  "emotionScore": 整数 0-100，越高代表情绪越积极,
-  "riskLevel": "LOW 或 MEDIUM 或 HIGH",
-  "suggestion": "给辅导员的 2-3 条干预建议"
-}}"""
-
 
 @router.post("/agent/report")
 def agent_report(request: AgentChatRequest):
-    """把整个会话交给 LLM 总结成咨询报告"""
+    """把整个会话交给 LLM 总结成咨询报告（prompt 见 prompts/report.txt）"""
+    _bind_trace(request)
     history = request.history or []
     dialog = "\n".join(
         f"{'学生' if m.role == 'user' else '助手'}：{m.content}" for m in history if m.content
@@ -231,7 +252,10 @@ def agent_report(request: AgentChatRequest):
     llm = get_llm()
     fallback = _heuristic_report(dialog, history)
     text, _ = llm.chat(
-        messages=[{"role": "user", "content": REPORT_PROMPT.format(dialog=dialog[:6000])}],
+        messages=[{
+            "role": "user",
+            "content": fill(load_prompt("report"), dialog=dialog[:6000]),
+        }],
         temperature=0.2,
         mock_text=fallback.model_dump_json(),
     )
@@ -316,9 +340,13 @@ def rebuild_kb():
 
 
 @router.get("/agent/kb/search")
-def kb_search(q: str, topK: int = 3):
-    """直接检索向量库，方便调参和演示 RAG 效果"""
-    docs: List[dict] = get_store().search(q, top_k=topK)
+def kb_search(q: str, topK: int = 3, mode: str | None = None):
+    """检索知识库，方便调参和演示 RAG 效果。
+
+    mode 可临时指定 hybrid / vector —— 同一个问题两种模式各查一次，
+    能直观看出混合检索多召回了什么（混合结果的 retrieval 字段会标出来自哪一路）。
+    """
+    docs: List[dict] = retrieve(q, top_k=topK, mode=mode)
     return Envelope.ok(docs)
 
 

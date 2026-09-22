@@ -1,5 +1,9 @@
-"""FastAPI 出入参模型（两个服务之间的内部协议）。"""
-from typing import List, Optional
+"""FastAPI 出入参模型（两个服务之间的内部协议）。
+
+新增字段一律给默认值：Java 侧的 DTO 若还没同步加字段，
+Jackson 会忽略未知字段，不会因为 Python 多返回几个 key 就反序列化失败。
+"""
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -16,6 +20,7 @@ class AgentChatRequest(BaseModel):
     conversationId: Optional[int] = Field(default=None, description="会话 id")
     message: str = Field(description="学生本次说的话")
     history: List[HistoryMessage] = Field(default_factory=list, description="最近的历史消息")
+    traceId: Optional[str] = Field(default=None, description="链路追踪 id，Java 侧传入；不传则自动生成")
 
 
 # ---------------- 响应 ----------------
@@ -28,6 +33,13 @@ class AgentChatData(BaseModel):
     aiSuggestion: Optional[str] = Field(default=None, description="风险处置建议")
     ragSources: List[str] = Field(default_factory=list, description="RAG 命中的 FAQ 来源")
     tokens: int = Field(default=0, description="消耗 token")
+
+    # ---- 可观测性与合规（新增，均带默认值）----
+    traceId: str = Field(default="", description="链路追踪 id，与 Java 日志对齐")
+    retrievalMode: str = Field(default="hybrid", description="本次使用的检索模式：hybrid / vector")
+    promptVersion: Dict[str, str] = Field(default_factory=dict, description="本次使用的各 prompt 版本号")
+    disclaimer: str = Field(default="", description="免责声明，由前端决定展示位置")
+    needHandoff: bool = Field(default=False, description="是否需要转人工（高危会话为 true）")
 
 
 class ReportData(BaseModel):

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Data;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Python → Java 的响应体（data 部分）。
@@ -32,4 +33,21 @@ public class AgentChatResponse {
 
     /** 消耗 token */
     private Integer tokens;
+
+    // ---------- 可观测性与合规（Python 侧返回，Java 透传给前端） ----------
+
+    /** 链路追踪 id */
+    private String traceId;
+
+    /** 本次使用的检索模式 hybrid / vector */
+    private String retrievalMode;
+
+    /** 各 prompt 的版本号（prompt 名 -> 内容哈希前 8 位），便于回溯线上用的是哪一版文案 */
+    private Map<String, String> promptVersion;
+
+    /** 免责声明：AI 回复不构成医学诊断 */
+    private String disclaimer;
+
+    /** 是否需要转人工（高危会话为 true） */
+    private Boolean needHandoff;
 }

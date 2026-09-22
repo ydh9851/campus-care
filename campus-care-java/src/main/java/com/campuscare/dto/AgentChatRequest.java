@@ -21,4 +21,7 @@ public class AgentChatRequest {
 
     /** 最近 N 轮历史，供 LLM 保持上下文 */
     private List<HistoryMessage> history;
+
+    /** 链路追踪 id：Java 侧生成后透传，Python 回显，两端日志用同一个 id 串起来 */
+    private String traceId;
 }

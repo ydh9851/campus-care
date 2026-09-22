@@ -173,9 +173,15 @@ async function send() {
             m.ragSources = data.ragSources || []
             m.elapsed = ((data.elapsedMs || 0) / 1000).toFixed(1)
             m.stages = data.stages || m.stages
+            m.disclaimer = data.disclaimer || ''
+            m.needHandoff = !!data.needHandoff
             m.streaming = false
             if (data.alertId) {
-              alertNotice.value = { id: data.alertId, level: data.riskLevel }
+              alertNotice.value = {
+                id: data.alertId,
+                level: data.riskLevel,
+                needHandoff: !!data.needHandoff,
+              }
             }
             if (isNewConversation) currentId.value = data.conversationId
           } else if (event === 'error') {
@@ -379,6 +385,9 @@ function scoreTone(score) {
                 <span class="caption">知识库命中</span>
                 <span v-for="(s, i) in m.ragSources" :key="i" class="src">{{ s }}</span>
               </p>
+
+              <!-- 合规兜底：AI 回复不构成医学诊断。视觉做轻，不抢正文注意力 -->
+              <p v-if="m.disclaimer" class="disclaimer">{{ m.disclaimer }}</p>
             </div>
           </template>
         </div>
@@ -391,7 +400,9 @@ function scoreTone(score) {
         :class="alertNotice.level === 'HIGH' ? 'notice-high' : 'notice-med'"
       >
         <span>
-          已生成风险预警工单 <b class="num">#{{ alertNotice.id }}</b>，辅导员会尽快跟进
+          已生成风险预警工单 <b class="num">#{{ alertNotice.id }}</b>，辅导员会尽快跟进<template
+            v-if="alertNotice.needHandoff"
+          >；回复中已附上人工求助入口，随时可用</template>
         </span>
         <button type="button" @click="alertNotice = null">知道了</button>
       </div>
@@ -931,6 +942,15 @@ function scoreTone(score) {
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 1px 7px;
+}
+
+/* 免责声明：法律与伦理上的必要兜底，视觉上刻意弱化 ——
+   用最浅的灰、不加边框，避免和正文抢注意力。 */
+.disclaimer {
+  margin-top: 10px;
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--ink-4);
 }
 
 /* ---------- 提示条 ---------- */

@@ -268,13 +268,13 @@ Java 主服务健康状态，`data.pythonAi` 反映 Python 服务是否在线。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/health` | 返回 LLM 模式与向量库状态 |
+| GET | `/api/health` | 返回 LLM 模式、检索模式、prompt 版本与向量库状态 |
 | POST | `/api/agent/chat` | 跑一遍 LangGraph，一次性返回 |
 | POST | `/api/agent/chat/stream` | SSE 流式版本 |
 | POST | `/api/agent/report` | 会话总结成报告 |
 | GET | `/api/agent/graph/mermaid` | 导出流程图源码 |
 | POST | `/api/agent/kb/rebuild` | 重建向量库（修改 FAQ 语料后调用） |
-| GET | `/api/agent/kb/search?q=&topK=` | 语义检索向量库，调参用（按相似度取 Top-K） |
+| GET | `/api/agent/kb/search?q=&topK=&mode=` | 检索知识库，调参用；`mode=hybrid/vector` 可临时切换检索模式做对比（结果带 `retrieval` 标注来自哪一路） |
 | GET | `/api/agent/kb/list?category=&q=` | 全量列举语料，供科普页浏览；支持分类与关键词过滤 |
 | GET | `/api/agent/kb/categories` | 分类及各自条数，供前端渲染筛选标签 |
 
@@ -285,8 +285,25 @@ Java 主服务健康状态，`data.pythonAi` 反映 Python 服务是否在线。
   "userId": 1,
   "conversationId": 1,
   "message": "最近压力很大",
-  "history": [{ "role": "user", "content": "..." }, { "role": "assistant", "content": "..." }]
+  "history": [{ "role": "user", "content": "..." }, { "role": "assistant", "content": "..." }],
+  "traceId": "可选，Java 侧传入用于链路追踪；不传则由 Python 自动生成"
 }
 ```
 
 返回格式与 Java 侧一致，同样为 `{code, message, data}`。
+
+`data` 除 `reply` / `intent` / `riskLevel` / `keywords` / `aiSuggestion` / `ragSources` / `tokens` 外，还包含：
+
+| 字段 | 说明 |
+|---|---|
+| `traceId` | 链路追踪 id，与 Java 日志对齐；响应头也会回写 `X-Trace-Id` |
+| `retrievalMode` | 本次使用的检索模式：`hybrid` / `vector` |
+| `promptVersion` | 本次使用的各 prompt 版本号（内容哈希前 8 位），便于回溯 |
+| `disclaimer` | 免责声明，由前端决定展示位置 |
+| `needHandoff` | 是否需要转人工，高危会话为 `true` |
+
+SSE 的 `done` 事件包含同样的字段。
+
+Java 侧（`AgentChatResponse` / `ChatResponse`）已同步这几个字段并透传给前端：
+会话页会在 AI 回复下方展示免责声明，高危时在预警提示条中提示「已附上人工求助入口」。
+`traceId` 由 Java 生成后经 `AgentChatRequest` 透传给 Python，两端日志用同一个 id 串联。
